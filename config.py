@@ -1,7 +1,14 @@
 import os
 
 # ─── Database ───────────────────────────────────────────────────────────────
-DATABASE_URL = "postgresql+psycopg2://sga_user:Ag200411@localhost:5432/sga_db"
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql+psycopg2://sga_user:Ag200411@localhost:5432/sga_db"
+)
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://") and "+psycopg2" not in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 # ─── App ────────────────────────────────────────────────────────────────────
 SECRET_KEY = os.getenv("SECRET_KEY", "sga-super-secret-key-2024")
