@@ -73,7 +73,7 @@ def route(pathname, session_data):
 # ─────────────────────────────────────────────────────────────────────────────
 @app.callback(
     Output("session-store", "data",    allow_duplicate=True),
-    Output("url",           "pathname", allow_duplicate=True),
+    Output("url",           "href",    allow_duplicate=True),
     Input("logout-btn",     "n_clicks"),
     State("session-store",  "data"),
     prevent_initial_call=True,
