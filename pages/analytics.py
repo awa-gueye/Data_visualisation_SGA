@@ -610,9 +610,9 @@ def register_callbacks(app):
                 showlegend=True,
                 legend=dict(
                     font=dict(family=TNR, size=10, color=C_DARK),
-                    orientation="h",
-                    yanchor="bottom", y=-0.25,
-                    xanchor="center", x=0.5,
+                    orientation="v",
+                    yanchor="middle", y=0.5,
+                    xanchor="left", x=1.05,
                 ),
             )
         else:
