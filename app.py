@@ -75,10 +75,24 @@ def route(pathname, session_data):
     Output("session-store", "data",    allow_duplicate=True),
     Output("url",           "pathname", allow_duplicate=True),
     Input("logout-btn",     "n_clicks"),
+    State("session-store",  "data"),
     prevent_initial_call=True,
 )
-def logout(n):
+def logout(n, session_data):
     if n:
+        try:
+            from utils.db import get_db
+            from models import User
+            db = get_db()
+            user_id = (session_data or {}).get("id")
+            if user_id:
+                user = db.query(User).filter(User.id == user_id).first()
+                if user and user.role != "admin":
+                    db.delete(user)
+                    db.commit()
+            db.close()
+        except Exception as e:
+            print(f"⚠️ Erreur suppression user : {e}")
         return None, "/login"
     return no_update, no_update
 
