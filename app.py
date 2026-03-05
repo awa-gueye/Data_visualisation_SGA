@@ -107,9 +107,30 @@ analytics.register_callbacks(app)
 # ─────────────────────────────────────────────────────────────────────────────
 #  Lancement
 # ─────────────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    print("🚀 Initialisation de la base de données...")
+# Initialisation automatique au démarrage (local + production)
+try:
     init_db()
-    print(f"✅ SGA démarré : http://localhost:8050")
-    print("   Compte admin : admin / admin123")
-    app.run(debug=True, host="0.0.0.0", port=8050)
+    print("✅ Base de données initialisée.")
+    # Créer le compte admin par défaut s'il n'existe pas
+    from utils.db import get_db
+    from models import User
+    from auth import hash_password
+    from datetime import datetime
+    db = get_db()
+    if not db.query(User).filter(User.username == "admin").first():
+        admin = User(
+            username="admin", email="admin@sga.fr",
+            full_name="Administrateur",
+            password=hash_password("admin123"),
+            role="admin", is_active=True,
+            created_at=datetime.utcnow()
+        )
+        db.add(admin)
+        db.commit()
+        print("✅ Compte admin créé.")
+    db.close()
+except Exception as e:
+    print(f"⚠️ Erreur init DB : {e}")
+
+if __name__ == "__main__":
+    app.run(debug=False, host="0.0.0.0", port=8050)
