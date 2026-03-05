@@ -1,286 +1,860 @@
 """
-pages/dashboard.py – Tableau de bord principal
+pages/dashboard.py — v9
+4 onglets : Indicateurs / Visualisation / Classements / Situation
+1 seul callback principal (fiable)
+Boutons sur la même ligne que le titre
 """
-from dash import html, dcc, Input, Output, callback
-import plotly.express as px
+from dash import html, dcc, Input, Output, ctx
 import plotly.graph_objects as go
 from datetime import date, timedelta
 from sqlalchemy import func
 
-from pages.components import sidebar, topbar, kpi_card, card, section_title, empty_state
-from utils.db import get_db, SessionFactory
+from pages.components import sidebar, topbar
+from utils.db import get_db
 from models import Student, Course, Session, Attendance, Grade
-from config import PLOTLY_TEMPLATE, COLORS
+
+FONT  = "Nunito, sans-serif"
+POPS  = "Poppins, sans-serif"
+DARK  = "#0A1628"
+GRAY  = "#6B7280"
+LGRAY = "#9CA3AF"
+GRID  = "rgba(0,0,0,0.05)"
+BG    = "rgba(0,0,0,0)"
+PAL   = ["#0EA5E9","#8B5CF6","#10B981","#F59E0B","#EF4444","#06B6D4"]
+W, H  = 310, 220
+
+TABS = [
+    ("indicateurs",   "Indicateurs clés", "10 KPIs"),
+    ("visualisation", "Visualisation",    "12 graphiques"),
+    ("classements",   "Classements",      "Top & Rankings"),
+    ("situation",     "Situation",        "Séances & Cours"),
+]
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Données dashboard
-# ─────────────────────────────────────────────────────────────────────────────
-def _get_stats():
+# ── Données ───────────────────────────────────────────────────────────────────
+def _opts():
     db = get_db()
     try:
-        n_students = db.query(Student).filter_by(is_active=True).count()
-        n_courses  = db.query(Course).filter_by(is_active=True).count()
-        n_sessions = db.query(Session).count()
+        opts = [{"label":"Tous les cours","value":"all"}]
+        for c in db.query(Course).filter_by(is_active=True).all():
+            opts.append({"label":f"{c.code} – {c.label}","value":str(c.id)})
+        return opts
+    finally: db.close()
 
-        # Taux d'absence global
-        total_att = db.query(Attendance).count()
-        abs_att   = db.query(Attendance).filter_by(is_absent=True).count()
-        abs_rate  = round(abs_att / total_att * 100, 1) if total_att else 0
-
-        # Moyenne générale
-        avg_result = db.query(func.avg(Grade.score)).scalar()
-        avg_score  = round(avg_result, 2) if avg_result else 0
-
-        # Séances cette semaine
-        week_ago   = date.today() - timedelta(days=7)
-        n_this_week = db.query(Session).filter(Session.date >= week_ago).count()
-
-        return {
-            "n_students":   n_students,
-            "n_courses":    n_courses,
-            "n_sessions":   n_sessions,
-            "abs_rate":     abs_rate,
-            "avg_score":    avg_score,
-            "n_this_week":  n_this_week,
-        }
-    finally:
-        db.close()
-
-
-def _get_recent_sessions(limit=6):
+def _stats():
     db = get_db()
     try:
-        sessions = (db.query(Session)
-                    .order_by(Session.date.desc())
-                    .limit(limit).all())
-        result = []
-        for s in sessions:
-            n_absent = sum(1 for a in s.attendances if a.is_absent)
-            result.append({
-                "id":       s.id,
-                "course":   s.course.code if s.course else "–",
-                "label":    s.course.label if s.course else "–",
-                "date":     s.date.strftime("%d/%m/%Y"),
-                "theme":    s.theme or "Sans thème",
-                "absent":   n_absent,
-                "duration": s.duration,
-                "color":    s.course.color if s.course else COLORS["primary"],
-            })
+        n_st  = db.query(Student).filter_by(is_active=True).count()
+        n_co  = db.query(Course).filter_by(is_active=True).count()
+        n_se  = db.query(Session).count()
+        t_att = db.query(Attendance).count()
+        a_att = db.query(Attendance).filter_by(is_absent=True).count()
+        j_att = db.query(Attendance).filter_by(is_absent=True,justified=True).count()
+        ar    = round(a_att/t_att*100,1) if t_att else 0
+        jr    = round(j_att/a_att*100,1) if a_att else 0
+        avg   = db.query(func.avg(Grade.score)).scalar()
+        avg   = round(avg,1) if avg else 0
+        t_g   = db.query(Grade).count()
+        p_g   = db.query(Grade).filter(Grade.score>=10).count()
+        e_g   = db.query(Grade).filter(Grade.score>=14).count()
+        f_g   = db.query(Grade).filter(Grade.score<10).count()
+        pr    = round(p_g/t_g*100,1) if t_g else 0
+        er    = round(e_g/t_g*100,1) if t_g else 0
+        w     = date.today()-timedelta(days=7)
+        m     = date.today()-timedelta(days=30)
+        nw    = db.query(Session).filter(Session.date>=w).count()
+        nm    = db.query(Session).filter(Session.date>=m).count()
+        return dict(n_st=n_st,n_co=n_co,n_se=n_se,ar=ar,jr=jr,
+                    avg=avg,pr=pr,er=er,f_g=f_g,nw=nw,nm=nm,t_g=t_g)
+    finally: db.close()
+
+def _absence_rows():
+    db = get_db()
+    try:
+        rows=[]
+        for c in db.query(Course).filter_by(is_active=True).all():
+            t=sum(len(s.attendances) for s in c.sessions)
+            a=sum(1 for s in c.sessions for x in s.attendances if x.is_absent)
+            if t>0: rows.append({"label":c.label,"code":c.code,"pct":round(a/t*100,1),"color":c.color})
+        return rows
+    finally: db.close()
+
+def _grade_rows():
+    db = get_db()
+    try:
+        rows=[]
+        for c in db.query(Course).filter_by(is_active=True).all():
+            gs=db.query(Grade).filter_by(course_id=c.id).all()
+            if gs:
+                rows.append({"label":c.label,"code":c.code,
+                             "avg":round(sum(g.score for g in gs)/len(gs),1),"color":c.color})
+        return rows
+    finally: db.close()
+
+def _scores():
+    db = get_db()
+    try: return [g.score for g in db.query(Grade).all()]
+    finally: db.close()
+
+def _timeline(days=42):
+    db = get_db()
+    try:
+        cut=date.today()-timedelta(days=days)
+        sess=db.query(Session).filter(Session.date>=cut).order_by(Session.date).all()
+        by={}
+        for s in sess:
+            d=s.date.strftime("%d/%m"); by[d]=by.get(d,0)+1
+        return list(by.keys()),list(by.values())
+    finally: db.close()
+
+def _progress():
+    db = get_db()
+    try:
+        return [{"code":c.code,"label":c.label,"done":c.hours_done,
+                 "total":c.total_hours,"pct":c.progress_pct,"color":c.color}
+                for c in db.query(Course).filter_by(is_active=True).all()]
+    finally: db.close()
+
+def _tops(n=8):
+    db = get_db()
+    try:
+        ranked=[]
+        for st in db.query(Student).filter_by(is_active=True).all():
+            gs=db.query(Grade).filter_by(student_id=st.id).all()
+            if gs:
+                avg=round(sum(g.score for g in gs)/len(gs),1)
+                ab=db.query(Attendance).filter_by(student_id=st.id,is_absent=True).count()
+                tot=db.query(Attendance).filter_by(student_id=st.id).count()
+                ranked.append({"name":f"{st.first_name} {st.last_name}","avg":avg,
+                               "ab":ab,"tot":tot,"pct":round(ab/tot*100,1) if tot else 0})
+        ranked.sort(key=lambda x:x["avg"],reverse=True)
+        return ranked[:n]
+    finally: db.close()
+
+def _top_absents(n=8):
+    db = get_db()
+    try:
+        rows=[]
+        for st in db.query(Student).filter_by(is_active=True).all():
+            ab=db.query(Attendance).filter_by(student_id=st.id,is_absent=True).count()
+            tot=db.query(Attendance).filter_by(student_id=st.id).count()
+            if tot>0:
+                rows.append({"name":f"{st.first_name} {st.last_name}",
+                             "ab":ab,"tot":tot,"pct":round(ab/tot*100,1)})
+        rows.sort(key=lambda x:x["ab"],reverse=True)
+        return rows[:n]
+    finally: db.close()
+
+def _sessions(n=8):
+    db = get_db()
+    try:
+        rows=[]
+        for s in db.query(Session).order_by(Session.date.desc()).limit(n).all():
+            na=sum(1 for a in s.attendances if a.is_absent)
+            nt=len(s.attendances)
+            rows.append({"course":s.course.code if s.course else "–",
+                         "label":s.course.label if s.course else "–",
+                         "date":s.date.strftime("%d/%m/%Y"),
+                         "theme":s.theme or "–","absent":na,"total":nt,
+                         "color":s.course.color if s.course else "#0EA5E9",
+                         "duration":s.duration})
+        return rows
+    finally: db.close()
+
+def _notes_par_cours():
+    db = get_db()
+    try:
+        result=[]
+        for c in db.query(Course).filter_by(is_active=True).all():
+            scores=[g.score for g in db.query(Grade).filter_by(course_id=c.id).all()]
+            if scores: result.append({"label":c.label,"code":c.code,"scores":scores,"color":c.color})
         return result
-    finally:
-        db.close()
+    finally: db.close()
 
-
-def _get_courses_progress():
+def _presence_par_jour():
     db = get_db()
     try:
-        courses = db.query(Course).filter_by(is_active=True).all()
-        return [
-            {
-                "code":     c.code,
-                "label":    c.label,
-                "done":     c.hours_done,
-                "total":    c.total_hours,
-                "pct":      c.progress_pct,
-                "color":    c.color,
-                "teacher":  c.teacher or "–",
-            }
-            for c in courses
-        ]
-    finally:
-        db.close()
+        jours=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"]
+        data={j:{"p":0,"t":0} for j in jours}
+        for s in db.query(Session).all():
+            j=jours[s.date.weekday()] if s.date.weekday()<6 else None
+            if j:
+                for a in s.attendances:
+                    data[j]["t"]+=1
+                    if not a.is_absent: data[j]["p"]+=1
+        rows=[]
+        for j in jours:
+            t=data[j]["t"]
+            if t>0: rows.append({"jour":j,"pct":round(data[j]["p"]/t*100,1),"total":t})
+        return rows
+    finally: db.close()
 
-
-def _get_absence_chart_data():
+def _evolution_moyennes():
     db = get_db()
     try:
-        # Absences par cours
-        courses = db.query(Course).filter_by(is_active=True).all()
-        labels, values = [], []
-        for c in courses:
-            total = sum(len(s.attendances) for s in c.sessions)
-            absences = sum(1 for s in c.sessions for a in s.attendances if a.is_absent)
-            if total > 0:
-                labels.append(c.code)
-                values.append(round(absences / total * 100, 1))
-        return labels, values
-    finally:
-        db.close()
+        result=[]
+        for c in db.query(Course).filter_by(is_active=True).all():
+            all_g=db.query(Grade).filter_by(course_id=c.id).all()
+            if len(all_g)>=2:
+                chunk=max(1,len(all_g)//6)
+                avgs=[round(sum(g.score for g in all_g[i:i+chunk])/len(all_g[i:i+chunk]),1)
+                      for i in range(0,len(all_g),chunk)]
+                result.append({"label":c.code,"x":[f"S{k+1}" for k in range(len(avgs))],"y":avgs,"color":c.color})
+        return result
+    finally: db.close()
 
-
-def _get_grades_distribution():
+def _grades_by_type():
     db = get_db()
     try:
-        scores = [g.score for g in db.query(Grade).all()]
-        return scores
-    finally:
-        db.close()
+        types={}
+        for g in db.query(Grade).all():
+            lbl=g.label or "Autre"
+            if lbl not in types: types[lbl]=[]
+            types[lbl].append(g.score)
+        return [{"label":k,"avg":round(sum(v)/len(v),1),"count":len(v)} for k,v in types.items()]
+    finally: db.close()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Layout
-# ─────────────────────────────────────────────────────────────────────────────
-def layout(user: dict = None):
-    stats    = _get_stats()
-    sessions = _get_recent_sessions()
-    courses  = _get_courses_progress()
-    abs_lbls, abs_vals = _get_absence_chart_data()
-    scores   = _get_grades_distribution()
+# ── Figures ───────────────────────────────────────────────────────────────────
+def _empty(w=W,h=H):
+    fig=go.Figure()
+    fig.add_annotation(text="Aucune donnée",xref="paper",yref="paper",x=0.5,y=0.5,
+                       showarrow=False,font=dict(color=LGRAY,size=12,family=FONT))
+    fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,
+                      margin=dict(l=8,r=8,t=8,b=8))
+    return fig
+
+def _bl(w=W,h=H,ml=10,mr=10,mt=12,mb=28):
+    return dict(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,
+                showlegend=False,margin=dict(l=ml,r=mr,t=mt,b=mb),
+                font=dict(family=FONT,color=GRAY,size=10),
+                xaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=LGRAY)),
+                yaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=LGRAY)))
+
+def _fig_gauge(avg,w=W,h=H):
+    color="#10B981" if avg>=14 else "#0EA5E9" if avg>=10 else "#EF4444"
+    fig=go.Figure(go.Indicator(mode="gauge+number",value=avg,
+        number=dict(suffix=" / 20",font=dict(size=24,family=POPS,color=DARK)),
+        gauge=dict(axis=dict(range=[0,20],tickvals=[0,5,10,15,20],tickfont=dict(size=9,color=LGRAY)),
+                   bar=dict(color=color,thickness=0.6),bgcolor="white",borderwidth=0,
+                   steps=[dict(range=[0,10],color="rgba(239,68,68,0.07)"),
+                          dict(range=[10,14],color="rgba(14,165,233,0.07)"),
+                          dict(range=[14,20],color="rgba(16,185,129,0.07)")],
+                   threshold=dict(line=dict(color=DARK,width=2),thickness=0.8,value=10))))
+    fig.update_layout(paper_bgcolor=BG,width=w,height=h,autosize=False,
+                      margin=dict(l=14,r=14,t=10,b=0),font=dict(family=FONT))
+    return fig
+
+def _fig_donut(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    fig=go.Figure(go.Pie(labels=[r["label"] for r in rows],values=[r["pct"] for r in rows],hole=0.58,
+        marker=dict(colors=PAL[:len(rows)],line=dict(color="#fff",width=2)),
+        textinfo="percent",textfont=dict(size=9,family=FONT),
+        hovertemplate="<b>%{label}</b><br>%{value}%<extra></extra>"))
+    fig.update_layout(paper_bgcolor=BG,width=w,height=h,autosize=False,showlegend=True,
+        legend=dict(font=dict(size=9,family=FONT),orientation="v",x=1.0,y=0.5,xanchor="left"),
+        margin=dict(l=8,r=80,t=8,b=8),font=dict(family=FONT))
+    return fig
+
+def _fig_histo(scores,w=W,h=H):
+    if not scores: return _empty(w,h)
+    bins=[0,4,6,8,10,12,14,16,18,20]; lbls=["0-4","4-6","6-8","8-10","10-12","12-14","14-16","16-18","18-20"]
+    cnts=[0]*(len(bins)-1)
+    for s in scores:
+        for i in range(len(bins)-1):
+            if bins[i]<=s<=bins[i+1]: cnts[i]+=1; break
+    colors=["#EF4444" if bins[i+1]<=10 else "#0EA5E9" if bins[i+1]<=14 else "#10B981" for i in range(len(bins)-1)]
+    fig=go.Figure(go.Bar(x=lbls,y=cnts,marker=dict(color=colors,line=dict(width=0)),
+        text=cnts,textposition="outside",textfont=dict(size=9,family=FONT,color=DARK),width=0.7,
+        hovertemplate="Notes %{x}<br><b>%{y}</b><extra></extra>"))
+    fig.add_annotation(x=0.98,y=0.95,xref="paper",yref="paper",
+        text=f"Moy. {round(sum(scores)/len(scores),1)}/20",showarrow=False,
+        font=dict(size=10,color="#0EA5E9",family=POPS),bgcolor="rgba(14,165,233,0.1)",
+        bordercolor="#0EA5E9",borderwidth=1,borderpad=4,xanchor="right")
+    layout=_bl(w,h,mb=28); layout["xaxis"]["title"]=dict(text="Notes",font=dict(size=9,color=LGRAY))
+    fig.update_layout(**layout); return fig
+
+def _fig_bars(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    lbls=[r["label"] for r in rows]; avgs=[r["avg"] for r in rows]
+    colors=["#10B981" if a>=14 else "#0EA5E9" if a>=10 else "#EF4444" for a in avgs]
+    fig=go.Figure(go.Bar(x=avgs,y=lbls,orientation="h",marker=dict(color=colors,line=dict(width=0)),
+        text=[f"{a}/20" for a in avgs],textposition="outside",textfont=dict(size=10,family=POPS,color=DARK),
+        width=0.5,hovertemplate="<b>%{y}</b><br>%{x}/20<extra></extra>"))
+    fig.add_vline(x=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
+    fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
+        margin=dict(l=8,r=60,t=10,b=20),font=dict(family=FONT,color=GRAY,size=10),
+        xaxis=dict(range=[0,22],gridcolor=GRID,tickfont=dict(size=9,color=LGRAY)),
+        yaxis=dict(gridcolor=GRID,tickfont=dict(size=10,color=DARK)))
+    return fig
+
+def _fig_line(dates,counts,w=W,h=H):
+    if not dates: return _empty(w,h)
+    fig=go.Figure(go.Scatter(x=dates,y=counts,mode="lines+markers",
+        line=dict(color="#0EA5E9",width=2.5,shape="spline",smoothing=0.8),
+        marker=dict(color="#0EA5E9",size=6,line=dict(color="#fff",width=2)),
+        fill="tozeroy",fillcolor="rgba(14,165,233,0.08)",
+        hovertemplate="<b>%{x}</b><br>%{y} séance(s)<extra></extra>"))
+    layout=_bl(w,h,mb=28); layout["yaxis"]["dtick"]=1
+    fig.update_layout(**layout); return fig
+
+def _fig_radar(courses,w=W,h=H):
+    if not courses: return _empty(w,h)
+    lbls=[c["code"] for c in courses]+[courses[0]["code"]]
+    vals=[c["pct"] for c in courses]+[courses[0]["pct"]]
+    fig=go.Figure(go.Scatterpolar(r=vals,theta=lbls,fill="toself",fillcolor="rgba(14,165,233,0.1)",
+        line=dict(color="#0EA5E9",width=2),marker=dict(size=4,color="#0EA5E9"),
+        hovertemplate="<b>%{theta}</b><br>%{r:.0f}%<extra></extra>"))
+    fig.update_layout(paper_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
+        margin=dict(l=28,r=28,t=28,b=28),
+        polar=dict(bgcolor=BG,radialaxis=dict(visible=True,range=[0,100],
+                   tickfont=dict(size=7,color=LGRAY),gridcolor="rgba(0,0,0,0.06)"),
+                   angularaxis=dict(tickfont=dict(size=9,color=DARK,family=POPS),
+                                    gridcolor="rgba(0,0,0,0.06)")),
+        font=dict(family=FONT))
+    return fig
+
+def _fig_absents(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    names=[r["name"].split()[0][0]+". "+(r["name"].split()[1] if len(r["name"].split())>1 else "") for r in rows]
+    vals=[r["ab"] for r in rows]; pcts=[r["pct"] for r in rows]
+    colors=["#EF4444" if p>20 else "#F59E0B" if p>10 else "#0EA5E9" for p in pcts]
+    fig=go.Figure(go.Bar(x=vals,y=names,orientation="h",marker=dict(color=colors,line=dict(width=0)),
+        text=[f"{v} ({p}%)" for v,p in zip(vals,pcts)],textposition="outside",
+        textfont=dict(size=9,family=FONT,color=DARK),width=0.55,
+        hovertemplate="<b>%{y}</b><br>%{x} abs.<extra></extra>"))
+    fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
+        margin=dict(l=8,r=72,t=10,b=20),font=dict(family=FONT,color=GRAY,size=10),
+        xaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=LGRAY)),
+        yaxis=dict(tickfont=dict(size=9,color=DARK)))
+    return fig
+
+def _fig_scatter(pts,w=W,h=H):
+    if not pts: return _empty(w,h)
+    x=[p["ab"] for p in pts]; y=[p["avg"] for p in pts]
+    colors=["#10B981" if a>=14 else "#0EA5E9" if a>=10 else "#EF4444" for a in y]
+    fig=go.Figure(go.Scatter(x=x,y=y,mode="markers+text",
+        marker=dict(size=11,color=colors,line=dict(color="#fff",width=2),opacity=0.85),
+        text=[p["name"].split()[0] for p in pts],textposition="top center",
+        textfont=dict(size=8,family=FONT,color=DARK),
+        hovertemplate="<b>%{text}</b><br>Abs:%{x} Moy:%{y}/20<extra></extra>"))
+    fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
+    layout=_bl(w,h,mb=28)
+    layout["xaxis"]["title"]=dict(text="Absences",font=dict(size=9,color=LGRAY))
+    layout["yaxis"].update({"range":[0,22],"title":dict(text="Moyenne /20",font=dict(size=9,color=LGRAY))})
+    fig.update_layout(**layout); return fig
+
+def _fig_by_type(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    lbls=[r["label"] for r in rows]; avgs=[r["avg"] for r in rows]; cnts=[r["count"] for r in rows]
+    colors=["#10B981" if a>=14 else "#0EA5E9" if a>=10 else "#EF4444" for a in avgs]
+    fig=go.Figure()
+    fig.add_trace(go.Bar(name="Moyenne",x=lbls,y=avgs,marker=dict(color=colors,line=dict(width=0)),
+        text=[f"{a}/20" for a in avgs],textposition="outside",textfont=dict(size=10,family=POPS,color=DARK),
+        width=0.5,yaxis="y"))
+    fig.add_trace(go.Scatter(name="Nb notes",x=lbls,y=cnts,mode="markers",
+        marker=dict(size=9,color="#8B5CF6",symbol="diamond",line=dict(color="#fff",width=2)),yaxis="y2"))
+    fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
+    fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=True,
+        legend=dict(orientation="h",y=1.12,x=0.5,xanchor="center",font=dict(size=9,family=FONT)),
+        margin=dict(l=10,r=36,t=26,b=28),font=dict(family=FONT,color=GRAY,size=10),
+        xaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=DARK)),
+        yaxis=dict(gridcolor=GRID,range=[0,22],tickfont=dict(size=9,color=LGRAY)),
+        yaxis2=dict(overlaying="y",side="right",tickfont=dict(size=9,color="#8B5CF6"),showgrid=False))
+    return fig
+
+def _fig_boxplot(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    fills=["rgba(14,165,233,0.15)","rgba(139,92,246,0.15)","rgba(16,185,129,0.15)",
+           "rgba(245,158,11,0.15)","rgba(239,68,68,0.15)","rgba(6,182,212,0.15)"]
+    fig=go.Figure()
+    for i,r in enumerate(rows):
+        fig.add_trace(go.Box(y=r["scores"],name=r["code"],boxmean=True,
+            marker=dict(color=PAL[i%len(PAL)],line=dict(color="#fff",width=1)),
+            line=dict(color=PAL[i%len(PAL)]),fillcolor=fills[i%len(fills)],
+            hovertemplate=f"<b>{r['label']}</b><br>%{{y}}<extra></extra>"))
+    fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
+    fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
+        margin=dict(l=10,r=10,t=10,b=24),font=dict(family=FONT,color=GRAY,size=10),
+        xaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=DARK)),
+        yaxis=dict(gridcolor=GRID,range=[0,22],tickfont=dict(size=9,color=LGRAY)))
+    return fig
+
+def _fig_presence_jour(rows,w=W,h=H):
+    if not rows: return _empty(w,h)
+    colors=["#10B981" if r["pct"]>=85 else "#0EA5E9" if r["pct"]>=70 else "#F59E0B" for r in rows]
+    fig=go.Figure(go.Bar(x=[r["jour"] for r in rows],y=[r["pct"] for r in rows],
+        marker=dict(color=colors,line=dict(width=0)),
+        text=[f"{r['pct']}%" for r in rows],textposition="outside",
+        textfont=dict(size=10,family=POPS,color=DARK),width=0.6,
+        hovertemplate="<b>%{x}</b><br>%{y}%<extra></extra>"))
+    fig.add_hline(y=80,line_dash="dot",line_color="rgba(14,165,233,0.4)",line_width=1.5)
+    layout=_bl(w,h,mt=16,mb=24); layout["yaxis"]["range"]=[0,110]
+    fig.update_layout(**layout); return fig
+
+def _fig_evolution(series,w=W,h=H):
+    if not series: return _empty(w,h)
+    fig=go.Figure()
+    for i,s in enumerate(series):
+        fig.add_trace(go.Scatter(x=s["x"],y=s["y"],name=s["label"],mode="lines+markers",
+            line=dict(color=PAL[i%len(PAL)],width=2,shape="spline"),
+            marker=dict(size=5,color=PAL[i%len(PAL)],line=dict(color="#fff",width=1.5)),
+            hovertemplate=f"<b>{s['label']}</b> %{{x}} → %{{y}}/20<extra></extra>"))
+    fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.35)",line_width=1.5)
+    layout=_bl(w,h,mr=12,mt=26,mb=28); layout["showlegend"]=True
+    layout["legend"]=dict(orientation="h",y=1.12,x=0.5,xanchor="center",font=dict(size=8,family=FONT))
+    layout["yaxis"]["range"]=[0,22]
+    fig.update_layout(**layout); return fig
+
+
+# ── Composants UI ─────────────────────────────────────────────────────────────
+def _kpi(num,value,label,sub,border,bg):
+    return html.Div(className="kpi-anim",style={
+        "background":"#fff","borderRadius":"14px","padding":"18px 20px",
+        "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","borderLeft":f"4px solid {border}",
+        "position":"relative","overflow":"hidden","animationDelay":f"{(num-1)*0.06}s",
+    },children=[
+        html.Div(f"KPI {num:02d}",style={"position":"absolute","top":"10px","right":"12px",
+            "fontSize":"9px","fontWeight":"700","letterSpacing":"1px","color":border,
+            "background":bg,"padding":"2px 7px","borderRadius":"99px"}),
+        html.Div(value,style={"fontFamily":POPS,"fontSize":"26px","fontWeight":"800","color":DARK,
+            "letterSpacing":"-0.5px","lineHeight":"1","marginBottom":"5px","marginTop":"4px"}),
+        html.Div(label,style={"fontSize":"10.5px","fontWeight":"700","textTransform":"uppercase",
+            "letterSpacing":"0.7px","color":GRAY,"marginBottom":"3px"}),
+        html.Div(sub,style={"fontSize":"10.5px","color":border,"fontWeight":"600"}) if sub else None,
+    ])
+
+def _gchart(num,title,sub,fig,delay=0):
+    return html.Div(className="chart-anim",style={
+        "background":"#fff","borderRadius":"14px","padding":"14px 14px 8px",
+        "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","overflow":"hidden",
+        "animationDelay":f"{delay}s",
+    },children=[
+        html.Div(style={"display":"flex","justifyContent":"space-between",
+                        "alignItems":"flex-start","marginBottom":"2px"},children=[
+            html.Div([html.Div(title,style={"fontFamily":POPS,"fontWeight":"700","fontSize":"12px","color":DARK}),
+                      html.Div(sub,style={"fontSize":"10px","color":LGRAY,"marginTop":"1px"})]),
+            html.Div(f"G{num:02d}",style={"fontSize":"9px","fontWeight":"700","letterSpacing":"1px",
+                "color":"#0EA5E9","background":"#E0F2FE","padding":"2px 7px","borderRadius":"99px"}),
+        ]),
+        html.Hr(style={"border":"none","borderTop":"1px solid #F3F4F6","margin":"7px 0 3px"}),
+        html.Div(style={"overflow":"hidden","lineHeight":"0"},children=[
+            dcc.Graph(figure=fig,config={"displayModeBar":False,"responsive":False},
+                      style={"width":f"{W}px","height":f"{H}px","display":"block","overflow":"hidden"}),
+        ]),
+    ])
+
+def _panel_card(title,badge_txt,badge_bg,badge_fg,children):
+    return html.Div(style={"background":"#fff","borderRadius":"14px","padding":"18px",
+        "boxShadow":"0 2px 10px rgba(10,22,40,0.07)"},children=[
+        html.Div(style={"display":"flex","justifyContent":"space-between","alignItems":"center",
+            "paddingBottom":"12px","marginBottom":"12px","borderBottom":"1px solid #F3F4F6"},children=[
+            html.Div(title,style={"fontFamily":POPS,"fontWeight":"700","fontSize":"13.5px","color":DARK}),
+            html.Div(badge_txt,style={"fontSize":"10.5px","fontWeight":"700","background":badge_bg,
+                "color":badge_fg,"padding":"3px 10px","borderRadius":"99px"}) if badge_txt else html.Div(),
+        ]),html.Div(children),
+    ])
+
+def _trow(rank,s):
+    lbls=["1er","2e","3e","4e","5e","6e","7e","8e"]
+    lc=["#F59E0B","#9CA3AF","#CD7F32"]+["#6B7280"]*5
+    gc="#10B981" if s["avg"]>=14 else "#0EA5E9" if s["avg"]>=10 else "#EF4444"
+    return html.Div(style={"display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
+        "borderRadius":"8px","background":"#F8FAFC" if rank%2==0 else "#fff","marginBottom":"3px"},children=[
+        html.Div(lbls[rank] if rank<8 else f"{rank+1}e",style={"fontFamily":POPS,"fontWeight":"800",
+            "fontSize":"10px","color":lc[min(rank,7)],"width":"24px","textAlign":"center"}),
+        html.Div(s["name"],style={"flex":"1","fontWeight":"600","fontSize":"12.5px","color":DARK}),
+        html.Div(style={"textAlign":"right"},children=[
+            html.Div(f"{s['avg']}/20",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"12.5px","color":gc}),
+            html.Div(f"{s['ab']} abs.",style={"fontSize":"10px","color":LGRAY}),
+        ]),
+    ])
+
+def _abs_row(rank,s):
+    clr="#EF4444" if s["pct"]>20 else "#F59E0B" if s["pct"]>10 else "#10B981"
+    bg="#FFF7F7" if s["pct"]>20 else "#FFFBEB" if s["pct"]>10 else "#F0FDF4"
+    return html.Div(style={"display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
+        "borderRadius":"8px","background":bg,"marginBottom":"4px"},children=[
+        html.Div(f"#{rank+1}",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"10px",
+            "color":clr,"width":"24px","textAlign":"center"}),
+        html.Div(s["name"],style={"flex":"1","fontWeight":"600","fontSize":"12px","color":DARK}),
+        html.Div(style={"textAlign":"right"},children=[
+            html.Div(f"{s['ab']} abs.",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"12px","color":clr}),
+            html.Div(f"{s['pct']}% du temps",style={"fontSize":"10px","color":LGRAY}),
+        ]),
+    ])
+
+def _cbar(c):
+    pct=c["pct"]
+    clr="#10B981" if pct>=80 else "#0EA5E9" if pct>=50 else "#EF4444"
+    return html.Div(style={"marginBottom":"12px"},children=[
+        html.Div(style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"4px"},children=[
+            html.Div(style={"display":"flex","alignItems":"center","gap":"6px"},children=[
+                html.Div(style={"width":"7px","height":"7px","borderRadius":"50%","background":c["color"]}),
+                html.Span(c["code"],style={"fontFamily":POPS,"fontWeight":"700","fontSize":"11.5px","color":DARK}),
+                html.Span(c["label"],style={"color":LGRAY,"fontSize":"11px"}),
+            ]),
+            html.Span(f"{c['done']}h/{c['total']}h",style={"fontSize":"10.5px","color":LGRAY}),
+        ]),
+        html.Div(style={"background":"#F3F4F6","borderRadius":"99px","height":"5px","overflow":"hidden"},children=[
+            html.Div(style={"width":f"{pct}%","height":"100%","borderRadius":"99px","background":clr}),
+        ]),
+        html.Div(f"{pct}%",style={"fontSize":"10px","color":clr,"fontWeight":"600","marginTop":"2px"}),
+    ])
+
+
+# ── Rendu des onglets ─────────────────────────────────────────────────────────
+def _render_indicateurs(st,prog):
+    return html.Div(className="tab-content",children=[
+        html.Div(style={"display":"grid","gridTemplateColumns":"repeat(5,1fr)","gap":"12px","marginBottom":"12px"},children=[
+            _kpi(1,str(st["n_st"]),"Étudiants actifs",f"{st['nw']} séances/sem.","#0EA5E9","#E0F2FE"),
+            _kpi(2,str(st["n_co"]),"Cours actifs","Matières en cours","#8B5CF6","#EDE9FE"),
+            _kpi(3,str(st["n_se"]),"Séances totales",f"{st['nm']} ce mois","#F59E0B","#FEF3C7"),
+            _kpi(4,f"{st['ar']}%","Taux d'absence","Toutes séances",
+                 "#EF4444" if st["ar"]>20 else "#10B981","#FEF2F2" if st["ar"]>20 else "#ECFDF5"),
+            _kpi(5,f"{st['avg']}/20","Moyenne générale",f"Réussite : {st['pr']}%",
+                 "#10B981" if st["avg"]>=10 else "#EF4444","#ECFDF5" if st["avg"]>=10 else "#FEF2F2"),
+        ]),
+        html.Div(style={"display":"grid","gridTemplateColumns":"repeat(5,1fr)","gap":"12px","marginBottom":"20px"},children=[
+            _kpi(6,f"{st['pr']}%","Taux de réussite","Notes >= 10/20","#10B981","#ECFDF5"),
+            _kpi(7,f"{st['er']}%","Taux d'excellence","Notes >= 14/20","#06B6D4","#CFFAFE"),
+            _kpi(8,str(st["f_g"]),"Notes insuffisantes","Notes < 10/20","#EF4444","#FEF2F2"),
+            _kpi(9,f"{st['jr']}%","Absences justifiées","Sur les absences","#F59E0B","#FEF3C7"),
+            _kpi(10,str(st["nw"]),"Séances cette sem.",f"{st['nm']} ce mois","#8B5CF6","#EDE9FE"),
+        ]),
+        html.Div(style={"background":"#fff","borderRadius":"14px","padding":"20px",
+            "boxShadow":"0 2px 10px rgba(10,22,40,0.07)"},children=[
+            html.Div("Récapitulatif général",style={"fontFamily":POPS,"fontWeight":"700","fontSize":"14px",
+                "color":DARK,"marginBottom":"14px","paddingBottom":"12px","borderBottom":"1px solid #F3F4F6"}),
+            html.Div(style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"},children=[
+                html.Div(style={"background":bg,"borderRadius":"10px","padding":"14px 16px",
+                    "borderLeft":f"3px solid {clr}"},children=[
+                    html.Div(val,style={"fontFamily":POPS,"fontWeight":"800","fontSize":"20px","color":DARK}),
+                    html.Div(lbl,style={"fontSize":"11px","color":GRAY,"marginTop":"3px"}),
+                ]) for lbl,val,clr,bg in [
+                    ("Total étudiants",str(st["n_st"]),"#0EA5E9","#F0F9FF"),
+                    ("Total séances",str(st["n_se"]),"#F59E0B","#FFFBEB"),
+                    ("Total notes",str(st["t_g"]),"#8B5CF6","#F5F3FF"),
+                    ("Taux de réussite",f"{st['pr']}%","#10B981","#F0FDF4"),
+                ]
+            ]),
+        ]),
+    ])
+
+
+def _render_visualisation(st):
+    ab=_absence_rows(); av=_grade_rows(); sc=_scores()
+    tl_d,tl_c=_timeline(); prog=_progress()
+    by_type=_grades_by_type(); boxplot=_notes_par_cours()
+    pres_j=_presence_par_jour(); evol=_evolution_moyennes()
+    absents=_top_absents(); tops=_tops()
+    scatter=[{"name":t["name"],"ab":t["ab"],"avg":t["avg"]} for t in tops]
+    chart_rows=[
+        [(1,"Moyenne générale","Indicateur /20 — seuil : 10",_fig_gauge(st["avg"])),
+         (2,"Absences par cours","Répartition du taux d'absence",_fig_donut(ab)),
+         (3,"Distribution des notes","Nb étudiants par tranche",_fig_histo(sc))],
+        [(4,"Moyenne par cours","Comparaison — seuil 10 en pointillé",_fig_bars(av)),
+         (5,"Activité des séances","Séances par date (6 semaines)",_fig_line(tl_d,tl_c)),
+         (6,"Avancement des cours","% des heures réalisées",_fig_radar(prog))],
+        [(7,"Top des absences","Étudiants les plus absents",_fig_absents(absents)),
+         (8,"Absences vs Moyenne","Corrélation présence/résultats",_fig_scatter(scatter)),
+         (9,"Notes par évaluation","Moyenne et volume par catégorie",_fig_by_type(by_type))],
+        [(10,"Boxplot par cours","Distribution min/max/médiane",_fig_boxplot(boxplot)),
+         (11,"Présence par jour","Taux selon le jour de la semaine",_fig_presence_jour(pres_j)),
+         (12,"Évolution des moyennes","Progression au fil des semaines",_fig_evolution(evol))],
+    ]
+    delay=0.0; children=[]
+    for row in chart_rows:
+        cells=[]
+        for num,title,sub,fig in row:
+            cells.append(_gchart(num,title,sub,fig,delay)); delay+=0.05
+        children.append(html.Div(style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr",
+            "gap":"13px","marginBottom":"13px"},children=cells))
+    return html.Div(className="tab-content",children=children)
+
+
+def _render_classements():
+    tops=_tops(); absents=_top_absents()
+    return html.Div(className="tab-content",children=[
+        html.Div(style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"16px","marginBottom":"16px"},children=[
+            _panel_card("Classement par mérite","Meilleure moyenne","#FEF9C3","#D97706",
+                        [_trow(i,s) for i,s in enumerate(tops)]),
+            _panel_card("Classement par absences","Plus d'absences","#FEF2F2","#EF4444",
+                        [_abs_row(i,s) for i,s in enumerate(absents)]),
+        ]),
+        html.Div(style={"background":"#fff","borderRadius":"14px",
+            "padding":"24px","boxShadow":"0 2px 10px rgba(10,22,40,0.07)","border":"1px solid #E5E7EB"},children=[
+            html.Div("Vue comparative",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"15px",
+                "color":DARK,"marginBottom":"18px"}),
+            html.Div(style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"16px"},children=[
+                html.Div(style={"textAlign":"center","background":"#F8FAFC",
+                    "borderRadius":"12px","padding":"18px 12px","border":"1px solid #E5E7EB"},children=[
+                    html.Div(v,style={"fontFamily":POPS,"fontSize":"28px","fontWeight":"800","color":c}),
+                    html.Div(l,style={"fontSize":"11px","color":GRAY,"marginTop":"4px"}),
+                    html.Div(n,style={"fontSize":"11px","color":DARK,"fontWeight":"700","marginTop":"3px"}),
+                ]) for v,l,c,n in [
+                    (f"{tops[0]['avg']}/20" if tops else "—","Meilleure moyenne","#F59E0B",tops[0]["name"] if tops else "—"),
+                    (f"{tops[-1]['avg']}/20" if tops else "—","Moyenne plancher","#0EA5E9",tops[-1]["name"] if tops else "—"),
+                    (str(absents[0]["ab"]) if absents else "0","Max absences","#EF4444",absents[0]["name"] if absents else "—"),
+                    (f"{round(sum(s['avg'] for s in tops)/len(tops),1)}/20" if tops else "—",
+                     "Moyenne du groupe","#10B981",f"Top {len(tops)} étudiants"),
+                ]
+            ]),
+        ]),
+    ])
+
+
+def _render_situation():
+    sess=_sessions(); prog=_progress(); st=_stats()
+    return html.Div(className="tab-content",children=[
+        # Tableau séances récentes
+        html.Div(style={"marginBottom":"16px"},children=[
+            _panel_card("Séances récentes",f"{st['n_se']} total","#E0F2FE","#0EA5E9",
+            html.Div([
+                html.Div(style={"display":"grid","gridTemplateColumns":"80px 1fr 110px 70px 80px 70px",
+                    "gap":"8px","padding":"8px 10px","marginBottom":"4px",
+                    "background":"#0A1628","borderRadius":"8px"},children=[
+                    html.Span(h,style={"fontSize":"10px","fontWeight":"700","textTransform":"uppercase",
+                        "letterSpacing":"0.8px","color":"rgba(255,255,255,0.6)"})
+                    for h in ["Cours","Thème","Date","Durée","Présents","Absents"]
+                ]),
+                *[html.Div(style={"display":"grid","gridTemplateColumns":"80px 1fr 110px 70px 80px 70px",
+                    "gap":"8px","padding":"9px 10px","borderRadius":"8px","alignItems":"center",
+                    "background":"#F8FAFC" if i%2==0 else "#fff"},children=[
+                    html.Div(style={"display":"flex","alignItems":"center","gap":"5px"},children=[
+                        html.Div(style={"width":"8px","height":"8px","borderRadius":"50%",
+                            "background":s["color"],"flexShrink":"0"}),
+                        html.Span(s["course"],style={"fontFamily":POPS,"fontWeight":"700",
+                            "fontSize":"11.5px","color":DARK}),
+                    ]),
+                    html.Span(s["theme"],style={"fontSize":"11.5px","color":GRAY,
+                        "overflow":"hidden","textOverflow":"ellipsis","whiteSpace":"nowrap"}),
+                    html.Span(s["date"],style={"fontSize":"11px","color":LGRAY}),
+                    html.Span(f"{s.get('duration',2)}h",style={"fontSize":"11.5px","color":GRAY}),
+                    html.Div(style={"display":"flex","alignItems":"center","gap":"6px"},children=[
+                        html.Div(style={"flex":"1","background":"#F3F4F6","borderRadius":"99px","height":"4px"},children=[
+                            html.Div(style={"width":f"{round((s['total']-s['absent'])/s['total']*100) if s['total'] else 100}%",
+                                "height":"100%","borderRadius":"99px","background":"#10B981"}),
+                        ]),
+                        html.Span(str(s["total"]-s["absent"]),style={"fontSize":"11px",
+                            "fontWeight":"700","color":"#10B981","flexShrink":"0"}),
+                    ]),
+                    html.Span(str(s["absent"]) if s["absent"]>0 else "—",
+                              style={"fontSize":"11px","fontWeight":"700",
+                                     "color":"#EF4444" if s["absent"]>0 else LGRAY}),
+                ]) for i,s in enumerate(sess)],
+            ])),
+        ]),
+        # Avancement + Métriques
+        html.Div(style={"display":"grid","gridTemplateColumns":"1.2fr 1fr","gap":"16px"},children=[
+            _panel_card("Avancement des cours",f"{len(prog)} cours","#EDE9FE","#8B5CF6",
+                        html.Div([_cbar(c) for c in prog])),
+            html.Div(style={"display":"flex","flexDirection":"column","gap":"10px"},children=[
+                html.Div(style={"background":"#fff","borderRadius":"12px","padding":"14px 18px",
+                    "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","display":"flex",
+                    "alignItems":"center","gap":"14px","borderLeft":f"4px solid {clr}"},children=[
+                    html.Div(style={"width":"38px","height":"38px","borderRadius":"10px","background":sbg,
+                        "display":"flex","alignItems":"center","justifyContent":"center",
+                        "fontSize":"18px","flexShrink":"0"},children=icon),
+                    html.Div([
+                        html.Div(val,style={"fontFamily":POPS,"fontWeight":"800","fontSize":"20px",
+                            "color":DARK,"lineHeight":"1"}),
+                        html.Div(lbl,style={"fontSize":"11px","color":GRAY,"marginTop":"2px"}),
+                    ]),
+                    html.Div(sub,style={"marginLeft":"auto","fontSize":"11px","fontWeight":"700",
+                        "color":clr,"background":sbg,"padding":"3px 10px","borderRadius":"99px"}),
+                ]) for icon,val,lbl,sub,clr,sbg in [
+                    ("📅",str(st["nw"]),      "Séances cette semaine",f"{st['nm']} ce mois","#0EA5E9","#E0F2FE"),
+                    ("✅",f"{st['pr']}%",      "Taux de réussite",    "Notes >= 10",         "#10B981","#ECFDF5"),
+                    ("⚠️",f"{st['ar']}%",      "Taux d'absence",      "Toutes séances",      "#F59E0B","#FEF3C7"),
+                    ("🎓",f"{st['avg']}/20",   "Moyenne générale",    f"{st['er']}% excellent","#8B5CF6","#EDE9FE"),
+                ]
+            ]),
+        ]),
+    ])
+
+
+# ── Boutons onglets ───────────────────────────────────────────────────────────
+def _btn_styles(active_tab):
+    """Retourne les 4 styles de boutons selon l'onglet actif."""
+    styles = []
+    for key, _, _ in TABS:
+        is_active = active_tab == key
+        styles.append({
+            "padding": "9px 22px",
+            "borderRadius": "9px",
+            "border": "none",
+            "cursor": "pointer",
+            "fontFamily": POPS,
+            "fontWeight": "700",
+            "fontSize": "12.5px",
+            "lineHeight": "1.3",
+            "whiteSpace": "nowrap",
+            "transition": "all 0.2s ease",
+            "background": "#0EA5E9" if is_active else "transparent",
+            "color": "#fff" if is_active else GRAY,
+            "boxShadow": "0 4px 12px rgba(14,165,233,0.3)" if is_active else "none",
+        })
+    return styles
+
+
+# ── Layout ────────────────────────────────────────────────────────────────────
+def layout(user=None):
+    name = (user or {}).get("full_name","").split()[0] if (user or {}).get("full_name") else ""
+    st   = _stats()
+    prog = _progress()
 
     return html.Div(id="app-shell", children=[
         sidebar("/", user),
         html.Div(id="main-content", children=[
-            topbar("Tableau de Bord", f"Bonjour, {(user or {}).get('full_name','')  } 👋"),
+            topbar("Tableau de Bord",""),
             html.Div(id="page-content", children=[
 
-                # ── KPI Cards ───────────────────────────────────────────
-                html.Div(className="kpi-grid", children=[
-                    kpi_card("🎓", str(stats["n_students"]),  "Étudiants actifs",  f"+{stats['n_this_week']} cette semaine"),
-                    kpi_card("📚", str(stats["n_courses"]),   "Cours actifs",      ""),
-                    kpi_card("📅", str(stats["n_sessions"]),  "Séances totales",   f"{stats['n_this_week']} cette semaine"),
-                    kpi_card("✅", f"{stats['abs_rate']}%",   "Taux d'absence",    ""),
-                    kpi_card("⭐", f"{stats['avg_score']}/20", "Moyenne générale",  ""),
-                ]),
-
-                # ── Graphiques ──────────────────────────────────────────
-                html.Div(className="grid-2", style={"marginBottom":"24px"}, children=[
-                    html.Div(className="chart-card", children=[
-                        html.Div("Distribution des notes", className="chart-title"),
-                        html.Div("Répartition par tranche", className="chart-sub"),
-                        dcc.Graph(figure=_make_grades_hist(scores), config={"displayModeBar":False}),
-                    ]),
-                    html.Div(className="chart-card", children=[
-                        html.Div("Taux d'absence par cours", className="chart-title"),
-                        html.Div("Pourcentage d'absences", className="chart-sub"),
-                        dcc.Graph(figure=_make_abs_bar(abs_lbls, abs_vals), config={"displayModeBar":False}),
-                    ]),
-                ]),
-
-                # ── Progression des cours ───────────────────────────────
-                html.Div(className="grid-2", children=[
-                    card(
-                        title="Progression des cours",
-                        children=html.Div([
-                            _course_progress_row(c) for c in courses
-                        ] or [empty_state("📚", "Aucun cours", "Ajoutez des cours pour voir la progression")]),
-                    ),
-                    card(
-                        title="Séances récentes",
-                        children=html.Div([
-                            _session_row(s) for s in sessions
-                        ] or [empty_state("📅", "Aucune séance", "")]),
-                    ),
-                ]),
-
-            ]),
-        ]),
-    ])
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Composants internes
-# ─────────────────────────────────────────────────────────────────────────────
-def _course_progress_row(c: dict) -> html.Div:
-    pct   = c["pct"]
-    color = "var(--success)" if pct >= 80 else "var(--warning)" if pct >= 50 else "var(--danger)"
-    return html.Div(style={"marginBottom":"16px"}, children=[
-        html.Div(className="flex-between", style={"marginBottom":"6px"}, children=[
-            html.Div(className="flex-center gap-8", children=[
+                # ── Ligne titre + onglets ────────────────────────────────
                 html.Div(style={
-                    "width":"10px","height":"10px","borderRadius":"50%",
-                    "background":c["color"],"flexShrink":"0",
-                }),
-                html.Span(c["code"], style={"fontWeight":"600","fontSize":"13px"}),
-                html.Span(c["label"], style={"color":"var(--text-muted)","fontSize":"12px"}),
+                    "display":"flex","alignItems":"center",
+                    "justifyContent":"space-between",
+                    "marginBottom":"18px","paddingBottom":"16px",
+                    "borderBottom":"2px solid #F3F4F6","gap":"12px",
+                },children=[
+
+                    # Titre
+                    html.Div([
+                        html.Div("Tableau de bord",style={"fontFamily":POPS,"fontSize":"21px",
+                            "fontWeight":"800","color":DARK,"letterSpacing":"-0.3px","marginBottom":"2px"}),
+                        html.Div(f"Mise à jour : {date.today().strftime('%d %B %Y')}",
+                                 style={"fontSize":"11px","color":LGRAY}),
+                    ],style={"flexShrink":"0"}),
+
+                    # Onglets — au centre
+                    html.Div(style={
+                        "display":"flex","gap":"5px",
+                        "background":"#F3F4F6","borderRadius":"12px","padding":"5px",
+                    },children=[
+                        html.Button(
+                            id=f"btn-{key}",
+                            n_clicks=0,
+                            children=[
+                                html.Div(lbl,style={"fontWeight":"700","fontSize":"12.5px"}),
+                                html.Div(hint,style={"fontSize":"9px","opacity":"0.75","marginTop":"1px"}),
+                            ],
+                            style={  # style initial, sera mis à jour par callback
+                                "padding":"9px 22px","borderRadius":"9px","border":"none",
+                                "cursor":"pointer","fontFamily":POPS,"fontWeight":"700",
+                                "fontSize":"12.5px","lineHeight":"1.3","whiteSpace":"nowrap",
+                                "background":"#0EA5E9" if key=="indicateurs" else "transparent",
+                                "color":"#fff" if key=="indicateurs" else GRAY,
+                                "boxShadow":"0 4px 12px rgba(14,165,233,0.3)" if key=="indicateurs" else "none",
+                                "transition":"all 0.2s ease",
+                            }
+                        ) for key,lbl,hint in TABS
+                    ]),
+
+                    # Badge
+                    html.Div("10 KPIs · 12 Graphiques",style={
+                        "background":"#F0F9FF","borderRadius":"8px","padding":"7px 14px",
+                        "fontSize":"11px","color":"#0EA5E9","fontWeight":"700",
+                        "fontFamily":POPS,"border":"1px solid rgba(14,165,233,0.2)",
+                        "whiteSpace":"nowrap","flexShrink":"0",
+                    }),
+                ]),
+
+                # ── Filtres ──────────────────────────────────────────────
+                html.Div(style={
+                    "background":"#fff","borderRadius":"12px","padding":"12px 20px",
+                    "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","marginBottom":"16px",
+                    "display":"flex","alignItems":"center","gap":"16px","flexWrap":"wrap",
+                },children=[
+                    html.Div("Filtres",style={"fontFamily":POPS,"fontWeight":"700",
+                        "fontSize":"12.5px","color":DARK}),
+                    html.Div(style={"width":"1px","height":"22px","background":"#E5E7EB"}),
+                    html.Div(style={"display":"flex","alignItems":"center","gap":"7px"},children=[
+                        html.Label("Cours",style={"fontSize":"10px","fontWeight":"700","color":GRAY,
+                            "textTransform":"uppercase","letterSpacing":"0.8px","whiteSpace":"nowrap"}),
+                        dcc.Dropdown(id="f-course",options=_opts(),value="all",clearable=False,
+                                     style={"width":"190px","fontSize":"12px"}),
+                    ]),
+                    html.Div(style={"display":"flex","alignItems":"center","gap":"7px"},children=[
+                        html.Label("Période",style={"fontSize":"10px","fontWeight":"700","color":GRAY,
+                            "textTransform":"uppercase","letterSpacing":"0.8px","whiteSpace":"nowrap"}),
+                        dcc.Dropdown(id="f-period",
+                                     options=[{"label":"Toute la période","value":"0"},
+                                              {"label":"7 derniers jours","value":"7"},
+                                              {"label":"30 derniers jours","value":"30"},
+                                              {"label":"90 derniers jours","value":"90"}],
+                                     value="0",clearable=False,
+                                     style={"width":"170px","fontSize":"12px"}),
+                    ]),
+                    html.Button("Réinitialiser",id="f-reset",n_clicks=0,style={
+                        "marginLeft":"auto","background":"transparent","border":"1px solid #D1D5DB",
+                        "borderRadius":"8px","padding":"6px 14px","fontSize":"11.5px","fontWeight":"700",
+                        "color":GRAY,"cursor":"pointer","fontFamily":POPS,
+                    }),
+                ]),
+
+                # ── Contenu ──────────────────────────────────────────────
+                html.Div(id="dash-tab-content",
+                         children=[_render_indicateurs(st, prog)]),
+
             ]),
-            html.Span(f"{c['done']}h / {c['total']}h",
-                      style={"fontSize":"12px","color":"var(--text-muted)"}),
-        ]),
-        html.Div(className="progress-wrap", children=[
-            html.Div(className="progress-bar",
-                     style={"width":f"{pct}%","background":color}),
         ]),
     ])
 
 
-def _session_row(s: dict) -> html.Div:
-    abs_color = "var(--danger)" if s["absent"] > 0 else "var(--success)"
-    return html.Div(style={
-        "display":"flex","gap":"12px","alignItems":"center",
-        "padding":"10px 0","borderBottom":"1px solid var(--border)",
-    }, children=[
-        html.Div(style={
-            "width":"8px","height":"40px","borderRadius":"4px",
-            "background":s["color"],"flexShrink":"0",
-        }),
-        html.Div(style={"flex":"1","minWidth":"0"}, children=[
-            html.Div(className="flex-center gap-8", children=[
-                html.Span(s["course"], style={"fontWeight":"700","fontSize":"13px"}),
-                html.Span(s["date"],   style={"color":"var(--text-muted)","fontSize":"11px"}),
-            ]),
-            html.Div(s["theme"], style={
-                "fontSize":"12px","color":"var(--text-muted)",
-                "whiteSpace":"nowrap","overflow":"hidden","textOverflow":"ellipsis",
-            }),
-        ]),
-        html.Div(className="flex-center gap-8", children=[
-            html.Span(f"⏱ {s['duration']}h", style={"fontSize":"11px","color":"var(--text-muted)"}),
-            html.Span(
-                f"❌ {s['absent']}" if s["absent"] else "✅ Tous",
-                style={"fontSize":"11px","color":abs_color,"fontWeight":"600"},
-            ),
-        ]),
-    ])
+# ── Callbacks ─────────────────────────────────────────────────────────────────
+def register_callbacks(app):
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-#  Figures Plotly
-# ─────────────────────────────────────────────────────────────────────────────
-def _make_grades_hist(scores):
-    if not scores:
-        fig = go.Figure()
-        fig.add_annotation(text="Aucune donnée", xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False, font={"color":"#A7A9BE"})
-    else:
-        fig = px.histogram(
-            x=scores, nbins=10,
-            labels={"x": "Note /20", "y": "Nb étudiants"},
-            color_discrete_sequence=[COLORS["primary"]],
-        )
-        fig.update_traces(marker_line_color="rgba(108,99,255,0.5)", marker_line_width=1)
-
-    fig.update_layout(
-        **PLOTLY_TEMPLATE["layout"],
-        height=240,
-        margin=dict(l=8, r=8, t=8, b=32),
-        showlegend=False,
+    @app.callback(
+        # Styles des 4 boutons
+        Output("btn-indicateurs",  "style"),
+        Output("btn-visualisation","style"),
+        Output("btn-classements",  "style"),
+        Output("btn-situation",    "style"),
+        # Contenu de l'onglet
+        Output("dash-tab-content", "children"),
+        # Triggers
+        Input("btn-indicateurs",  "n_clicks"),
+        Input("btn-visualisation","n_clicks"),
+        Input("btn-classements",  "n_clicks"),
+        Input("btn-situation",    "n_clicks"),
+        Input("f-course",         "value"),
+        Input("f-period",         "value"),
+        prevent_initial_call=True,
     )
-    return fig
+    def handle_tab(n1, n2, n3, n4, course_id, period):
+        # Identifier quel bouton a déclenché le callback
+        triggered = ctx.triggered_id or "btn-indicateurs"
 
+        # Si c'est un filtre, garder l'onglet actif courant
+        # On détermine l'onglet selon le bouton cliqué
+        if triggered in ("f-course", "f-period"):
+            # Récupérer le dernier onglet via les n_clicks
+            clicks = {"btn-indicateurs":n1,"btn-visualisation":n2,
+                      "btn-classements":n3,"btn-situation":n4}
+            tab = max(clicks, key=lambda k: clicks[k] or 0).replace("btn-","")
+        else:
+            tab = triggered.replace("btn-","")
 
-def _make_abs_bar(labels, values):
-    if not labels:
-        fig = go.Figure()
-        fig.add_annotation(text="Aucune donnée", xref="paper", yref="paper",
-                           x=0.5, y=0.5, showarrow=False, font={"color":"#A7A9BE"})
-    else:
-        bar_colors = [
-            COLORS["danger"] if v > 20 else COLORS["warning"] if v > 10 else COLORS["accent"]
-            for v in values
-        ]
-        fig = go.Figure(go.Bar(
-            x=labels, y=values,
-            marker_color=bar_colors,
-            text=[f"{v}%" for v in values],
-            textposition="outside",
-        ))
+        styles = _btn_styles(tab)
+        st     = _stats()
+        prog   = _progress()
 
-    fig.update_layout(
-        **PLOTLY_TEMPLATE["layout"],
-        height=240,
-        margin=dict(l=8, r=8, t=24, b=8),
-        showlegend=False,
-        yaxis_range=[0, max(values or [0]) * 1.3 + 5],
+        if tab == "indicateurs":
+            content = _render_indicateurs(st, prog)
+        elif tab == "visualisation":
+            content = _render_visualisation(st)
+        elif tab == "classements":
+            content = _render_classements()
+        else:
+            content = _render_situation()
+
+        return styles[0], styles[1], styles[2], styles[3], content
+
+    @app.callback(
+        Output("f-course","value"),
+        Output("f-period","value"),
+        Input("f-reset","n_clicks"),
+        prevent_initial_call=True,
     )
-    return fig
+    def reset(n):
+        return "all","0"

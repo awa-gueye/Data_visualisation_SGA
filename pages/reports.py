@@ -31,7 +31,7 @@ def layout(user: dict = None):
                 html.Div(className="grid-2", style={"gap":"24px"}, children=[
 
                     # ── Bulletin de notes ──────────────────────────────────
-                    card(title="🎓 Bulletin de notes individuel", children=[
+                    card(title=" Bulletin de notes individuel", children=[
                         html.Div(id="bulletin-feedback"),
                         html.P("Sélectionnez un étudiant pour générer son bulletin de notes complet au format PDF.",
                                style={"color":"var(--text-muted)","fontSize":"13px","marginBottom":"16px"}),
@@ -46,7 +46,7 @@ def layout(user: dict = None):
                         html.Div(id="student-preview", style={"margin":"16px 0"}),
 
                         html.Button(
-                            "📄 Générer le bulletin PDF",
+                            " Générer le bulletin PDF",
                             id="gen-bulletin-btn",
                             className="btn btn-primary",
                             n_clicks=0,
@@ -56,7 +56,7 @@ def layout(user: dict = None):
                     ]),
 
                     # ── Rapport de présences ───────────────────────────────
-                    card(title="✅ Rapport de présences", children=[
+                    card(title=" Rapport de présences", children=[
                         html.Div(id="attendance-report-feedback"),
                         html.P("Générez un rapport de présence complet pour un cours.",
                                style={"color":"var(--text-muted)","fontSize":"13px","marginBottom":"16px"}),
@@ -69,7 +69,7 @@ def layout(user: dict = None):
                         ]),
 
                         html.Button(
-                            "📊 Générer le rapport PDF",
+                            " Générer le rapport PDF",
                             id="gen-report-btn",
                             className="btn btn-success",
                             n_clicks=0,
@@ -81,13 +81,13 @@ def layout(user: dict = None):
 
                 # ── Bulletins en masse ─────────────────────────────────────
                 html.Div(style={"marginTop":"24px"}, children=[
-                    card(title="📦 Export en masse", children=[
+                    card(title=" Export en masse", children=[
                         html.P("Générez tous les bulletins d'une classe en un seul fichier ZIP.",
                                style={"color":"var(--text-muted)","fontSize":"13px","marginBottom":"16px"}),
                         html.Div(id="bulk-feedback"),
                         html.Div(className="flex-center gap-12", children=[
                             html.Button(
-                                "📦 Télécharger tous les bulletins (ZIP)",
+                                " Télécharger tous les bulletins (ZIP)",
                                 id="bulk-bulletins-btn",
                                 className="btn btn-outline",
                                 n_clicks=0,
@@ -141,11 +141,11 @@ def register_callbacks(app):
                     html.Div(s.full_name, style={"fontWeight":"700","fontSize":"16px"}),
                     html.Div(s.student_code, style={"fontSize":"12px","color":"var(--text-muted)"}),
                     html.Div(className="flex-center gap-16", style={"marginTop":"6px"}, children=[
-                        html.Span(f"📊 {avg}/20" if avg else "📊 –",
+                        html.Span(f" {avg}/20" if avg else " –",
                                   style={"fontSize":"12px","color":"var(--accent)","fontWeight":"600"}),
-                        html.Span(f"❌ {n_abs}/{n_tot} absences",
+                        html.Span(f" {n_abs}/{n_tot} absences",
                                   style={"fontSize":"12px","color":"var(--danger)" if n_abs > 3 else "var(--text-muted)"}),
-                        html.Span(f"📝 {len(s.grades)} note(s)",
+                        html.Span(f" {len(s.grades)} note(s)",
                                   style={"fontSize":"12px","color":"var(--text-muted)"}),
                     ]),
                 ]),
@@ -173,11 +173,11 @@ def register_callbacks(app):
             pdf_bytes = generate_student_report(s, grades, atts, courses)
             filename  = f"bulletin_{s.student_code}_{s.last_name}.pdf"
             return (
-                alert_msg(f"Bulletin de {s.full_name} généré ✅", "success", "✅"),
+                alert_msg(f"Bulletin de {s.full_name} généré ", "success", "✅"),
                 dcc.send_bytes(pdf_bytes, filename),
             )
         except Exception as e:
-            return alert_msg(f"Erreur PDF : {e}", "danger", "❌"), no_update
+            return alert_msg(f"Erreur PDF : {e}", "danger", ""), no_update
         finally:
             db.close()
 
@@ -190,7 +190,7 @@ def register_callbacks(app):
     )
     def generate_report(n, course_id):
         if not n or not course_id:
-            return alert_msg("Sélectionnez un cours.", "warning", "⚠️"), no_update
+            return alert_msg("Sélectionnez un cours.", "warning", ""), no_update
         db = get_db()
         try:
             course = db.query(Course).get(course_id)
@@ -204,11 +204,11 @@ def register_callbacks(app):
             pdf_bytes = generate_attendance_report(course, sessions_data)
             filename  = f"presences_{course.code}.pdf"
             return (
-                alert_msg(f"Rapport {course.code} généré ✅", "success", "✅"),
+                alert_msg(f"Rapport {course.code} généré ", "success", ""),
                 dcc.send_bytes(pdf_bytes, filename),
             )
         except Exception as e:
-            return alert_msg(f"Erreur PDF : {e}", "danger", "❌"), no_update
+            return alert_msg(f"Erreur PDF : {e}", "danger", ""), no_update
         finally:
             db.close()
 
@@ -237,7 +237,7 @@ def register_callbacks(app):
                     except Exception:
                         pass
             return (
-                alert_msg(f"{len(students)} bulletins générés ✅", "success", "✅"),
+                alert_msg(f"{len(students)} bulletins générés ", "success", "✅"),
                 dcc.send_bytes(zip_buf.getvalue(), "bulletins_tous.zip"),
             )
         except Exception as e:
