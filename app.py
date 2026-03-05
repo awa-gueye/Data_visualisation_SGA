@@ -14,6 +14,7 @@ from utils.db import init_db
 # ─────────────────────────────────────────────────────────────────────────────
 app = dash.Dash(
     __name__,
+    assets_folder="assets",
     use_pages=False,
     suppress_callback_exceptions=True,
     title=APP_TITLE,
