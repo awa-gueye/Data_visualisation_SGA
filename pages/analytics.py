@@ -365,7 +365,7 @@ def register_callbacks(app):
             fig1.add_vline(x=10, line_dash="dot", line_color=C_RED, line_width=1.2,
                            annotation_text="Seuil 10",
                            annotation_font=dict(family=TNR, size=10, color=C_RED),
-                           annotation_position="top left")
+                           annotation_position="bottom left")
             fig1.update_layout(
                 **_base_layout(margin=dict(l=16, r=16, t=16, b=36), bargap=0.08),
                 xaxis=_ax("Note /20", tickvals=list(range(0, 21, 2))),
@@ -518,7 +518,7 @@ def register_callbacks(app):
                            annotation_text="Seuil 10",
                            annotation_font=dict(size=9, color=C_RED, family=TNR))
             fig6.update_layout(
-                **_base_layout(margin=dict(l=16, r=16, t=16, b=36)),
+                **_base_layout(margin=dict(l=16, r=16, t=16, b=36), showlegend=True),
                 xaxis=_ax(),
                 yaxis=_ax("Note /20", range=[-1, 22]),
             )
@@ -605,7 +605,7 @@ def register_callbacks(app):
             fig8.update_layout(
                 paper_bgcolor="#FFFFFF", plot_bgcolor="#FFFFFF",
                 font=dict(family=TNR, color=C_DARK, size=11),
-                margin=dict(l=16, r=16, t=16, b=40),
+                margin=dict(l=16, r=16, t=16, b=80),
                 showlegend=True,
                 legend=dict(
                     font=dict(family=TNR, size=10, color=C_DARK),
