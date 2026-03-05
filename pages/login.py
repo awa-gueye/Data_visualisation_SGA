@@ -173,28 +173,31 @@ def register_callbacks(app):
         return {"display": "none"}
 
     @app.callback(
-        Output("register-error",   "children"),
-        Output("register-success", "children"),
-        Input("register-btn", "n_clicks"),
-        State("reg-fullname",         "value"),
-        State("reg-username",         "value"),
-        State("reg-email",            "value"),
-        State("reg-password",         "value"),
-        State("reg-password-confirm", "value"),
-        State("reg-role",             "value"),
-        prevent_initial_call=True,
+    Output("register-error",          "children"),
+    Output("register-success",        "children"),
+    Output("register-modal-overlay",  "style", allow_duplicate=True),
+    Output("login-error",             "children", allow_duplicate=True),
+    Input("register-btn", "n_clicks"),
+    State("reg-fullname",         "value"),
+    State("reg-username",         "value"),
+    State("reg-email",            "value"),
+    State("reg-password",         "value"),
+    State("reg-password-confirm", "value"),
+    State("reg-role",             "value"),
+    prevent_initial_call=True,
     )
     def do_register(n_clicks, full_name, username, email, password, confirm, role):
         if not all([full_name, username, email, password, confirm]):
-            return _error("Veuillez remplir tous les champs."), ""
+            return _error("Veuillez remplir tous les champs."), "", no_update, no_update
         if password != confirm:
-            return _error("Les mots de passe ne correspondent pas."), ""
+            return _error("Les mots de passe ne correspondent pas."), "", no_update, no_update
         if len(password) < 6:
-            return _error("Le mot de passe doit contenir au moins 6 caractères."), ""
+            return _error("Le mot de passe doit contenir au moins 6 caractères."), "", no_update, no_update
         ok, result = register_user(username, email, full_name, password, role or "teacher")
         if ok:
-            return "", _success(f"Compte créé ! Connectez-vous avec « {username} ».")
-        return _error(result), ""
+            # Ferme le modal et affiche le message de succès sur la page login
+            return "", "", {"display": "none"}, _success(f"✅ Compte créé ! Connectez-vous avec « {username} ».")
+        return _error(result), "", no_update, no_update
 
     @app.callback(
         Output("session-store", "data"),
