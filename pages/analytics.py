@@ -426,8 +426,9 @@ def register_callbacks(app):
                 hovertemplate="<b>%{y}</b> : %{x}% d'absences<extra></extra>",
             ))
             fig3.add_vline(x=15, line_dash="dot", line_color=C_RED, line_width=1.2,
-                           annotation_text="Seuil 15%",
-                           annotation_font=dict(size=9, color=C_RED, family=TNR))
+                    annotation_text="Seuil 15%",
+                    annotation_font=dict(size=9, color=C_RED, family=TNR),
+                    annotation_position="bottom right")
             fig3.update_layout(
                 **_base_layout(margin=dict(l=16, r=56, t=16, b=16)),
                 xaxis=_ax("Taux d'absence (%)", range=[0, max_r + 8]),
@@ -518,7 +519,7 @@ def register_callbacks(app):
                            annotation_text="Seuil 10",
                            annotation_font=dict(size=9, color=C_RED, family=TNR))
             fig6.update_layout(
-                **_base_layout(margin=dict(l=16, r=16, t=16, b=36), showlegend=True),
+                **_base_layout(margin=dict(l=16, r=16, t=40, b=16), showlegend=False),
                 xaxis=_ax(),
                 yaxis=_ax("Note /20", range=[-1, 22]),
             )
@@ -569,7 +570,7 @@ def register_callbacks(app):
                                     font=dict(family=TNR, size=9, color=c),
                                     opacity=0.55)
             fig7.update_layout(
-                **_base_layout(margin=dict(l=16, r=16, t=16, b=36)),
+                **_base_layout(margin=dict(l=16, r=16, t=16, b=36), showlegend=False),
                 xaxis=_ax("Taux d'absence (%)", range=[-2, None]),
                 yaxis=_ax("Moyenne /20", range=[0, 21]),
             )
@@ -610,7 +611,7 @@ def register_callbacks(app):
                 legend=dict(
                     font=dict(family=TNR, size=10, color=C_DARK),
                     orientation="h",
-                    yanchor="bottom", y=-0.18,
+                    yanchor="bottom", y=-0.25,
                     xanchor="center", x=0.5,
                 ),
             )
