@@ -1174,3 +1174,139 @@ textarea.dash-input { resize: vertical; min-height: 80px; }
   border-radius: 8px !important;
   background: #fff !important;
 }
+
+/* Boutons login côte à côte (Se connecter + S'inscrire) */
+.login-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+/* Bouton S'inscrire */
+.btn-register {
+  background: transparent;
+  color: var(--bleu);
+  border: 2px solid var(--bleu);
+  font-family: var(--font-titre);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  transition: all var(--transition);
+}
+.btn-register:hover {
+  background: var(--bleu-pale);
+  border-color: var(--bleu-sombre);
+  color: var(--bleu-sombre);
+  transform: translateY(-1px);
+  box-shadow: var(--ombre-bleu);
+}
+
+/* Overlay modal inscription */
+#register-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(10, 22, 40, 0.65);
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+#register-modal-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(4px);
+  z-index: -1;
+}
+
+/* Card de la modal */
+.modal-card {
+  background: var(--blanc);
+  width: min(600px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  box-shadow: 0 24px 64px rgba(10, 22, 40, 0.25);
+  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+}
+
+/* En-tête de la modal (fond noir comme .modal-head) */
+.modal-header {
+  background: var(--noir);
+  padding: 20px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.modal-header .login-logo h2 {
+  font-family: var(--font-titre);
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--blanc);
+  margin-bottom: 2px;
+}
+
+.modal-header .login-logo p {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+}
+
+/* Corps de la modal */
+.modal-card > *:not(.modal-header):not(.modal-footer) {
+  padding: 0 28px;
+}
+.modal-card .form-group,
+.modal-card .form-row-2,
+.modal-card #register-error,
+.modal-card #register-success {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Contenu scrollable */
+.modal-card-body {
+  padding: 24px 28px 0;
+}
+
+/* Bouton fermer (×) */
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  transition: color var(--transition);
+  padding: 0;
+}
+.modal-close-btn:hover { color: var(--blanc); }
+
+/* Grille 2 colonnes dans le formulaire d'inscription */
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+/* Footer de la modal (boutons Annuler / Créer) */
+.modal-footer {
+  display: flex;
+  gap: 10px;
+  padding: 20px 28px 28px;
+  border-top: 1px solid var(--border-gris);
+  margin-top: 20px;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .form-row-2 { grid-template-columns: 1fr; }
+  .modal-card { width: 100%; }
+}
