@@ -94,12 +94,19 @@ def layout(user: dict = None):
                             ]),
 
                             html.Div(className="form-group", children=[
-                                html.Label("Libelle de l'evaluation", className="form-label"),
-                                dcc.Input(
+                                html.Label("Libellé de l'évaluation", className="form-label"),
+                                dcc.Dropdown(
                                     id="grade-label",
-                                    placeholder="ex: Examen Final, TP1, Partiel...",
-                                    className="dash-input",
-                                    style={"width": "100%"},
+                                    options=[
+                                        {"label": "Premier devoir",  "value": "Premier devoir"},
+                                        {"label": "Deuxième devoir", "value": "Deuxième devoir"},
+                                        {"label": "Examen final",    "value": "Examen final"},
+                                        {"label": "TP Noté",         "value": "TP Noté"},
+                                        {"label": "Exposé",          "value": "Exposé"},
+                                    ],
+                                    placeholder="Sélectionner un type d'évaluation",
+                                    clearable=False,
+                                    style={"background": "var(--bg-card)"},
                                 ),
                             ]),
 
@@ -265,7 +272,17 @@ def register_callbacks(app):
                     html.Div(),
                 )
             else:
-                # Creation
+                # Vérifier doublon (même étudiant + même cours + même libellé)
+                existing = db.query(Grade).filter_by(
+                    student_id=int(student_id),
+                    course_id=int(course_id),
+                    label=label or "Note",
+                ).first()
+                if existing:
+                    return (
+                        alert_msg(f"Cette note existe déjà ({existing.score}/20). Utilisez 'Modifier' pour la changer.", "warning"),
+                        no_update, no_update, no_update,
+                    )
                 g = Grade(
                     student_id=int(student_id),
                     course_id=int(course_id),
@@ -421,7 +438,17 @@ def register_callbacks(app):
 
         db = get_db()
         try:
+            added = 0
+            skipped = 0
             for gd in grades_data:
+                existing = db.query(Grade).filter_by(
+                    student_id=gd["student_id"],
+                    course_id=int(course_id),
+                    label=gd["label"],
+                ).first()
+                if existing:
+                    skipped += 1
+                    continue
                 g = Grade(
                     student_id=gd["student_id"],
                     course_id=int(course_id),
@@ -430,9 +457,13 @@ def register_callbacks(app):
                     label=gd["label"],
                 )
                 db.add(g)
+                added += 1
             db.commit()
+            msg = f"{added} note(s) importée(s) avec succès."
+            if skipped:
+                msg += f" {skipped} doublon(s) ignoré(s)."
             return (
-                alert_msg(f"{len(grades_data)} notes importees avec succes.", "success"),
+                alert_msg(msg, "success" if added > 0 else "warning"),
                 (refresh or 0) + 1,
             )
         except Exception as e:

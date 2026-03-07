@@ -2,7 +2,7 @@
 app.py – Point d'entrée principal du SGA (Système de Gestion Académique)
 """
 import dash
-from dash import html, dcc, Input, Output, State, callback, no_update
+from dash import html, dcc, Input, Output, State, no_update
 import dash_bootstrap_components as dbc
 
 from config import APP_TITLE, SECRET_KEY
@@ -32,7 +32,7 @@ server.secret_key = SECRET_KEY
 # ─────────────────────────────────────────────────────────────────────────────
 app.layout = html.Div([
     dcc.Location(id="url", refresh=False),
-    dcc.Store(id="session-store", storage_type="session"),   # Persiste la session
+    dcc.Store(id="session-store", storage_type="session"),
     html.Div(id="page-root"),
 ])
 
@@ -40,10 +40,11 @@ app.layout = html.Div([
 # ─────────────────────────────────────────────────────────────────────────────
 #  Router principal
 # ─────────────────────────────────────────────────────────────────────────────
-from pages import login, courses, sessions, students, grades, reports, analytics, dashboard
+from pages import login, courses, sessions, students, grades, reports, analytics, dashboard, welcome
 
 _ROUTES = {
     "/":           dashboard,
+    "/welcome":    welcome,
     "/analytics":  analytics,
     "/courses":    courses,
     "/sessions":   sessions,

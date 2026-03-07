@@ -215,7 +215,7 @@ def register_callbacks(app):
             return no_update, _error("Veuillez remplir tous les champs."), no_update
         ok, result = login_user(username, password)
         if ok:
-            return result, "", "/"
+            return result, "", "/welcome"
         return no_update, _error(result), no_update
 
 
