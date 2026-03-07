@@ -1329,24 +1329,31 @@ textarea.dash-input { resize: vertical; min-height: 80px; }
 /* ============================================================
    WELCOME PAGE — Animations
    ============================================================ */
-@keyframes float {
-    0%, 100% { transform: translateY(0px) scale(1); }
-    50%       { transform: translateY(-20px) scale(1.05); }
-}
-@keyframes slideDown {
-    from { opacity: 0; transform: translateY(-30px); }
+@keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-20px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes fadeUp {
     from { opacity: 0; transform: translateY(20px); }
     to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes expandWidth {
-    from { transform: scaleX(0); }
-    to   { transform: scaleX(1); }
+@keyframes expandLine {
+    from { transform: scaleX(0); transform-origin: left; }
+    to   { transform: scaleX(1); transform-origin: left; }
 }
 #welcome-page a { text-decoration: none !important; }
 #welcome-page button:hover {
     transform: translateY(-2px) !important;
-    box-shadow: 0 12px 40px rgba(212,175,55,0.5) !important;
+    box-shadow: 0 8px 28px rgba(10,22,40,0.28) !important;
+}
+#welcome-page {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-height: 100vh !important;
+}
+
+#main-content:has(#welcome-page) {
+    padding: 0 !important;
+    margin: 0 !important;
 }

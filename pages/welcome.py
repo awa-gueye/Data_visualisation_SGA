@@ -10,76 +10,69 @@ from datetime import datetime
 
 
 def _icon_graduation(color="#0A1628", size=32):
-    return svg.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px","flexShrink":"0"},
-        children=[
-            svg.Path(d="M12 3L1 9l11 6 9-4.91V17M5 13.18v4L12 21l7-3.82v-4",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-        ])
+    return svg.Svg([
+        svg.Path(d="M12 3L1 9l11 6 9-4.91V17M5 13.18v4L12 21l7-3.82v-4",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px","flexShrink":"0"})
 
 def _icon_users(color="#0EA5E9", size=22):
-    return svg.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px"},
-        children=[
-            svg.Path(d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-            svg.Circle(cx="9", cy="7", r="4",
-                        stroke=color, strokeWidth="2",
-                        strokeLinecap="round", strokeLinejoin="round"),
-            svg.Path(d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-        ])
+    return svg.Svg([
+        svg.Path(d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+        svg.Circle(cx="9", cy="7", r="4",
+                   stroke=color, strokeWidth="2"),
+        svg.Path(d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px"})
 
 def _icon_book(color="#10B981", size=22):
-    return svg.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px"},
-        children=[
-            svg.Path(d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-            svg.Path(d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-        ])
+    return svg.Svg([
+        svg.Path(d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+        svg.Path(d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px"})
 
 def _icon_chart(color="#D4AF37", size=22):
-    return svg.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px"},
-        children=[
-            svg.Line(x1="18", y1="20", x2="18", y2="10",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-            svg.Line(x1="12", y1="20", x2="12", y2="4",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-            svg.Line(x1="6", y1="20", x2="6", y2="14",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-        ])
+    return svg.Svg([
+        svg.Line(x1="18", y1="20", x2="18", y2="10",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+        svg.Line(x1="12", y1="20", x2="12", y2="4",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+        svg.Line(x1="6",  y1="20", x2="6",  y2="14",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px"})
 
 def _icon_alert(color="#EF4444", size=22):
-    return html.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px"},
-        children=[
-            svg.Path(d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
-                      stroke=color, strokeWidth="2",
-                      strokeLinecap="round", strokeLinejoin="round"),
-            svg.Line(x1="12", y1="9", x2="12", y2="13",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-            svg.Line(x1="12", y1="17", x2="12.01", y2="17",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-        ])
+    return svg.Svg([
+        svg.Path(d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z",
+                 stroke=color, strokeWidth="2",
+                 strokeLinecap="round", strokeLinejoin="round"),
+        svg.Line(x1="12", y1="9",  x2="12",   y2="13",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+        svg.Line(x1="12", y1="17", x2="12.01", y2="17",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px"})
 
 def _icon_arrow(color="#FFFFFF", size=18):
-    return svg.Svg(viewBox="0 0 24 24", fill="none",
-        style={"width":f"{size}px","height":f"{size}px"},
-        children=[
-            svg.Line(x1="5", y1="12", x2="19", y2="12",
-                      stroke=color, strokeWidth="2", strokeLinecap="round"),
-            svg.Polyline(points="12 5 19 12 12 19",
-                          stroke=color, strokeWidth="2",
-                          strokeLinecap="round", strokeLinejoin="round"),
-        ])
+    return svg.Svg([
+        svg.Line(x1="5", y1="12", x2="19", y2="12",
+                 stroke=color, strokeWidth="2", strokeLinecap="round"),
+        svg.Polyline(points="12 5 19 12 12 19",
+                     stroke=color, strokeWidth="2",
+                     strokeLinecap="round", strokeLinejoin="round"),
+    ], viewBox="0 0 24 24", fill="none",
+       style={"width":f"{size}px","height":f"{size}px"})
 
 
 def layout(user: dict = None):
@@ -118,6 +111,7 @@ def layout(user: dict = None):
         "justifyContent": "center",
         "fontFamily": "'Times New Roman', Times, serif",
         "padding": "40px 20px",
+        "boxSizing": "border-box",
     }, children=[
 
         html.Div(style={"width":"100%","maxWidth":"860px"}, children=[
@@ -151,12 +145,13 @@ def layout(user: dict = None):
 
             # ── Avatar + message ─────────────────────────────────────────
             html.Div(style={
-                "display":"flex","alignItems":"center","gap":"48px",
+                "display":"flex","flexDirection":"column","alignItems":"center",
+                "textAlign":"center","gap":"20px",
                 "marginBottom":"48px",
                 "animation":"fadeUp 0.7s ease 0.1s both",
             }, children=[
                 html.Div(initials, style={
-                    "flexShrink":"0","width":"100px","height":"100px",
+                    "width":"100px","height":"100px",
                     "borderRadius":"50%","background":"#0A1628",
                     "color":"#FFFFFF","fontSize":"32px","fontWeight":"bold",
                     "display":"flex","alignItems":"center","justifyContent":"center",
@@ -174,7 +169,10 @@ def layout(user: dict = None):
                         "fontWeight":"bold","color":"#0A1628",
                         "margin":"0 0 14px","lineHeight":"1.1",
                     }),
-                    html.Div(style={"display":"flex","alignItems":"center","gap":"8px"}, children=[
+                    html.Div(style={
+                        "display":"flex","alignItems":"center",
+                        "justifyContent":"center","gap":"8px",
+                    }, children=[
                         html.Div(style={
                             "width":"6px","height":"6px",
                             "borderRadius":"50%","background":role_clr,
@@ -184,6 +182,16 @@ def layout(user: dict = None):
                             "letterSpacing":"2px","fontWeight":"bold",
                         }),
                     ]),
+                    html.P(
+                        "Bienvenue sur votre espace de gestion académique. "
+                        "Retrouvez ici toutes vos informations, suivez les performances "
+                        "de vos étudiants et gérez vos cours en toute simplicité.",
+                        style={
+                            "fontSize":"14px","color":"#6B7280",
+                            "lineHeight":"1.8","maxWidth":"480px",
+                            "margin":"0 auto 14px","fontStyle":"italic",
+                        }
+                    ),
                 ]),
             ]),
 
