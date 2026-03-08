@@ -869,7 +869,8 @@ def _student_profile_content(student_id: int):
                 avg=avg_c, n_abs=n_abs_c, grades=g_list,
             )
 
-        CHART_H = 280
+        CHART_H = 260
+        CARD_H  = f"{CHART_H + 60}px"  # hauteur uniforme des 3 cartes
 
         # Radar
         rd = [(d["code"], d["avg"]) for d in course_data.values() if d["avg"] is not None]
@@ -884,7 +885,7 @@ def _student_profile_content(student_id: int):
             ))
             fig_radar.update_layout(
                 paper_bgcolor=BG, autosize=True,
-                margin=dict(l=30, r=30, t=30, b=30),
+                margin=dict(l=40, r=40, t=50, b=80),
                 polar=dict(
                     bgcolor=BG,
                     radialaxis=dict(visible=True, range=[0, 20],
@@ -926,34 +927,37 @@ def _student_profile_content(student_id: int):
             font=dict(family=TNR),
         )
 
-        # Barres notes
+        # Barres notes (horizontal)
         bd = [(d["code"], d["avg"], d["color"])
               for d in course_data.values() if d["avg"] is not None]
         if bd:
             fig_bars = go.Figure(go.Bar(
-                x=[b[0] for b in bd], y=[b[1] for b in bd],
+                y=[b[0] for b in bd], x=[b[1] for b in bd],
+                orientation="h",
                 marker=dict(
                     color=[b[2] for b in bd],
                     line=dict(width=0),
-                    cornerradius=4,
+                    cornerradius=3,
                 ),
                 text=[f"{b[1]}" for b in bd],
-                textposition="outside",
-                textfont=dict(size=10, family=TNR, color=DARK),
-                width=0.55,
+                textposition="inside",
+                insidetextanchor="end",
+                textfont=dict(size=9, family=TNR, color="#fff"),
             ))
-            fig_bars.add_hline(y=10, line_dash="dot",
+            fig_bars.add_vline(x=10, line_dash="dot",
                                line_color="rgba(239,68,68,0.5)", line_width=1.5,
                                annotation_text="Seuil 10",
                                annotation_font=dict(size=9, color=RED, family=TNR))
             fig_bars.update_layout(
                 paper_bgcolor=BG, plot_bgcolor=BG, autosize=True,
-                margin=dict(l=10, r=10, t=30, b=40),
-                yaxis=dict(range=[0, 23], gridcolor="rgba(0,0,0,0.04)",
-                           tickfont=dict(size=8, color=LGRAY, family=TNR),
+                margin=dict(l=8, r=30, t=8, b=80),
+                xaxis=dict(range=[1, 15], gridcolor="rgba(0,0,0,0.04)",
+                           tickfont=dict(size=7, color=LGRAY, family=TNR),
                            zeroline=False),
-                xaxis=dict(tickfont=dict(size=9, color=DARK, family=TNR)),
+                yaxis=dict(tickfont=dict(size=9, color=DARK, family=TNR),
+                           autorange="reversed"),
                 showlegend=False, font=dict(family=TNR),
+                bargap=0.50,
             )
         else:
             fig_bars = _empty_fig(CHART_H)
@@ -1071,10 +1075,11 @@ def _student_profile_content(student_id: int):
                     html.Div(style={
                         "display": "grid",
                         "gridTemplateColumns": "1fr 1fr 1fr",
-                        "gap": "12px", "marginBottom": "18px",
-                        "alignItems": "start",
+                        "gap": "6px", "marginBottom": "18px",
+                        "alignItems": "stretch",
                     }, children=[
-                        html.Div(style=_card_style(), children=[
+                        # Carte 1 — Radar
+                        html.Div(style={**_card_style(), "height": CARD_H, "display":"flex","flexDirection":"column"}, children=[
                             html.Div("Radar des matieres", style={
                                 "fontFamily": TNR, "fontWeight": "bold",
                                 "fontSize": "12px", "color": DARK, "marginBottom": "2px",
@@ -1083,22 +1088,68 @@ def _student_profile_content(student_id: int):
                                 "fontFamily": TNR, "fontSize": "10px",
                                 "color": LGRAY, "marginBottom": "6px",
                             }),
-                            dcc.Graph(figure=fig_radar, config={"displayModeBar": False}, responsive=True,
-                                      style={"height": f"{CHART_H}px", "width": "100%"}),
+                            html.Div(style={"flex":"1","minHeight":"0"}, children=[
+                                dcc.Graph(figure=fig_radar, config={"displayModeBar": False}, responsive=True,
+                                          style={"height": "100%", "width": "100%"}),
+                            ]),
                         ]),
-                        html.Div(style=_card_style(), children=[
+                        # Carte 2 — Présence (CSS pur)
+                        html.Div(style={**_card_style(), "height": CARD_H, "display":"flex","flexDirection":"column"}, children=[
                             html.Div("Taux de presence", style={
                                 "fontFamily": TNR, "fontWeight": "bold",
                                 "fontSize": "12px", "color": DARK, "marginBottom": "2px",
                             }),
                             html.Div(f"Objectif : 85% — actuel : {pres_pct:.0f}%", style={
                                 "fontFamily": TNR, "fontSize": "10px",
-                                "color": LGRAY, "marginBottom": "6px",
+                                "color": LGRAY, "marginBottom": "8px",
                             }),
-                            dcc.Graph(figure=fig_gauge, config={"displayModeBar": False}, responsive=True,
-                                      style={"height": f"{CHART_H}px", "width": "100%"}),
+                            html.Div(style={"flex":"1","display":"flex","flexDirection":"column","alignItems":"center","justifyContent":"space-between","gap":"10px"}, children=[
+                                # Cercle
+                                html.Div(style={
+                                    "width":"120px","height":"120px","borderRadius":"50%","flexShrink":"0",
+                                    "background": f"conic-gradient({gauge_clr} 0% {pres_pct}%, #F3F4F6 {pres_pct}% 100%)",
+                                    "display":"flex","alignItems":"center","justifyContent":"center",
+                                    "boxShadow":"0 4px 16px rgba(0,0,0,0.07)",
+                                }, children=[
+                                    html.Div(style={
+                                        "width":"90px","height":"90px","borderRadius":"50%",
+                                        "background":"#fff","display":"flex","flexDirection":"column",
+                                        "alignItems":"center","justifyContent":"center",
+                                    }, children=[
+                                        html.Div(f"{pres_pct:.0f}%", style={"fontFamily":TNR,"fontSize":"24px","fontWeight":"bold","color":gauge_clr,"lineHeight":"1"}),
+                                        html.Div("présence", style={"fontFamily":TNR,"fontSize":"9px","color":LGRAY,"marginTop":"2px"}),
+                                    ]),
+                                ]),
+                                # 3 compteurs
+                                html.Div(style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr","gap":"6px","width":"100%"}, children=[
+                                    html.Div(style={"textAlign":"center","background":"#F0FDF4","borderRadius":"8px","padding":"7px 4px"}, children=[
+                                        html.Div(str(st["n_total"]-st["n_abs"]), style={"fontFamily":TNR,"fontWeight":"bold","fontSize":"15px","color":GRN}),
+                                        html.Div("Présents", style={"fontFamily":TNR,"fontSize":"9px","color":LGRAY}),
+                                    ]),
+                                    html.Div(style={"textAlign":"center","background":"#FEF2F2","borderRadius":"8px","padding":"7px 4px"}, children=[
+                                        html.Div(str(st["n_abs"]), style={"fontFamily":TNR,"fontWeight":"bold","fontSize":"15px","color":RED}),
+                                        html.Div("Absences", style={"fontFamily":TNR,"fontSize":"9px","color":LGRAY}),
+                                    ]),
+                                    html.Div(style={"textAlign":"center","background":"#FFFBEB","borderRadius":"8px","padding":"7px 4px"}, children=[
+                                        html.Div(str(st["n_just"]), style={"fontFamily":TNR,"fontWeight":"bold","fontSize":"15px","color":ORG}),
+                                        html.Div("Justifiées", style={"fontFamily":TNR,"fontSize":"9px","color":LGRAY}),
+                                    ]),
+                                ]),
+                                # Barre
+                                html.Div(style={"width":"100%"}, children=[
+                                    html.Div(style={"display":"flex","justifyContent":"space-between","marginBottom":"3px"}, children=[
+                                        html.Span("Assiduité", style={"fontSize":"9px","color":LGRAY,"fontFamily":TNR}),
+                                        html.Span("Objectif 85%", style={"fontSize":"9px","color":LGRAY,"fontFamily":TNR}),
+                                    ]),
+                                    html.Div(style={"background":"#F3F4F6","borderRadius":"99px","height":"6px","overflow":"hidden","position":"relative"}, children=[
+                                        html.Div(style={"width":f"{min(pres_pct,100)}%","height":"100%","borderRadius":"99px","background":gauge_clr}),
+                                        html.Div(style={"position":"absolute","left":"85%","top":"0","width":"2px","height":"100%","background":DARK,"opacity":"0.25"}),
+                                    ]),
+                                ]),
+                            ]),
                         ]),
-                        html.Div(style=_card_style(), children=[
+                        # Carte 3 — Barres notes
+                        html.Div(style={**_card_style(), "height": CARD_H, "display":"flex","flexDirection":"column"}, children=[
                             html.Div("Notes par cours", style={
                                 "fontFamily": TNR, "fontWeight": "bold",
                                 "fontSize": "12px", "color": DARK, "marginBottom": "2px",
@@ -1107,8 +1158,10 @@ def _student_profile_content(student_id: int):
                                 "fontFamily": TNR, "fontSize": "10px",
                                 "color": LGRAY, "marginBottom": "6px",
                             }),
-                            dcc.Graph(figure=fig_bars, config={"displayModeBar": False}, responsive=True,
-                                      style={"height": f"{CHART_H}px", "width": "100%"}),
+                            html.Div(style={"height":"120px"}, children=[
+                                dcc.Graph(figure=fig_bars, config={"displayModeBar": False}, responsive=True,
+                                          style={"height": "100%", "width": "100%"}),
+                            ]),
                         ]),
                     ]),
 

@@ -1,13 +1,14 @@
 """
-pages/dashboard.py — v9
+pages/dashboard.py — v10
 4 onglets : Indicateurs / Visualisation / Classements / Situation
-1 seul callback principal (fiable)
-Boutons sur la même ligne que le titre
+Filtres cours + période fonctionnels sur tous les onglets
+Animations sur tous les onglets
 """
-from dash import html, dcc, Input, Output, ctx
+from dash import html, dcc, Input, Output, State, ctx
 import plotly.graph_objects as go
 from datetime import date, timedelta
 from sqlalchemy import func
+import time as _time
 
 from pages.components import sidebar, topbar
 from utils.db import get_db
@@ -25,13 +26,21 @@ W, H  = 310, 220
 
 TABS = [
     ("indicateurs",   "Indicateurs clés", "10 KPIs"),
-    ("visualisation", "Visualisation",    "12 graphiques"),
+    ("visualisation", "Visualisation",    "9 graphiques"),
     ("classements",   "Classements",      "Top & Rankings"),
     ("situation",     "Situation",        "Séances & Cours"),
 ]
 
 
-# ── Données ───────────────────────────────────────────────────────────────────
+# ── Helpers filtres ───────────────────────────────────────────────────────────
+def _parse_filters(course_id, period):
+    cid  = None if (not course_id or course_id == "all") else int(course_id)
+    days = int(period) if period and period != "0" else 0
+    cut  = date.today() - timedelta(days=days) if days > 0 else None
+    return cid, cut
+
+
+# ── Données (avec filtres) ────────────────────────────────────────────────────
 def _opts():
     db = get_db()
     try:
@@ -41,86 +50,119 @@ def _opts():
         return opts
     finally: db.close()
 
-def _stats():
+def _stats(cid=None, cut=None):
     db = get_db()
     try:
-        n_st  = db.query(Student).filter_by(is_active=True).count()
-        n_co  = db.query(Course).filter_by(is_active=True).count()
-        n_se  = db.query(Session).count()
-        t_att = db.query(Attendance).count()
-        a_att = db.query(Attendance).filter_by(is_absent=True).count()
-        j_att = db.query(Attendance).filter_by(is_absent=True,justified=True).count()
+        n_st = db.query(Student).filter_by(is_active=True).count()
+        n_co = db.query(Course).filter_by(is_active=True).count()
+
+        se_q = db.query(Session)
+        if cid: se_q = se_q.filter_by(course_id=cid)
+        if cut: se_q = se_q.filter(Session.date >= cut)
+        n_se = se_q.count()
+
+        # IDs séances filtrées pour les attendances
+        all_sess_ids = [s.id for s in se_q.all()]
+
+        att_q = db.query(Attendance)
+        if all_sess_ids:
+            att_q = att_q.filter(Attendance.session_id.in_(all_sess_ids))
+        elif cid or cut:
+            att_q = att_q.filter(False)
+
+        t_att = att_q.count()
+        a_att = att_q.filter_by(is_absent=True).count()
+        j_att = att_q.filter_by(is_absent=True, justified=True).count()
         ar    = round(a_att/t_att*100,1) if t_att else 0
         jr    = round(j_att/a_att*100,1) if a_att else 0
-        avg   = db.query(func.avg(Grade.score)).scalar()
-        avg   = round(avg,1) if avg else 0
-        t_g   = db.query(Grade).count()
-        p_g   = db.query(Grade).filter(Grade.score>=10).count()
-        e_g   = db.query(Grade).filter(Grade.score>=14).count()
-        f_g   = db.query(Grade).filter(Grade.score<10).count()
+
+        gr_q = db.query(Grade)
+        if cid: gr_q = gr_q.filter_by(course_id=cid)
+        grades = gr_q.all()
+        avg   = round(sum(g.score for g in grades)/len(grades),1) if grades else 0
+        t_g   = len(grades)
+        p_g   = sum(1 for g in grades if g.score >= 10)
+        e_g   = sum(1 for g in grades if g.score >= 14)
+        f_g   = sum(1 for g in grades if g.score < 10)
         pr    = round(p_g/t_g*100,1) if t_g else 0
         er    = round(e_g/t_g*100,1) if t_g else 0
-        w     = date.today()-timedelta(days=7)
-        m     = date.today()-timedelta(days=30)
-        nw    = db.query(Session).filter(Session.date>=w).count()
-        nm    = db.query(Session).filter(Session.date>=m).count()
+
+        w  = date.today()-timedelta(days=7)
+        m  = date.today()-timedelta(days=30)
+        nw = db.query(Session).filter(Session.date>=w).count()
+        nm = db.query(Session).filter(Session.date>=m).count()
+
         return dict(n_st=n_st,n_co=n_co,n_se=n_se,ar=ar,jr=jr,
                     avg=avg,pr=pr,er=er,f_g=f_g,nw=nw,nm=nm,t_g=t_g)
     finally: db.close()
 
-def _absence_rows():
+def _absence_rows(cid=None, cut=None):
     db = get_db()
     try:
         rows=[]
-        for c in db.query(Course).filter_by(is_active=True).all():
-            t=sum(len(s.attendances) for s in c.sessions)
-            a=sum(1 for s in c.sessions for x in s.attendances if x.is_absent)
+        q = db.query(Course).filter_by(is_active=True)
+        if cid: q = q.filter_by(id=cid)
+        for c in q.all():
+            sess = [s for s in c.sessions if (not cut or s.date >= cut)]
+            t=sum(len(s.attendances) for s in sess)
+            a=sum(1 for s in sess for x in s.attendances if x.is_absent)
             if t>0: rows.append({"label":c.label,"code":c.code,"pct":round(a/t*100,1),"color":c.color})
         return rows
     finally: db.close()
 
-def _grade_rows():
+def _grade_rows(cid=None, cut=None):
     db = get_db()
     try:
         rows=[]
-        for c in db.query(Course).filter_by(is_active=True).all():
-            gs=db.query(Grade).filter_by(course_id=c.id).all()
+        q = db.query(Course).filter_by(is_active=True)
+        if cid: q = q.filter_by(id=cid)
+        for c in q.all():
+            gs = db.query(Grade).filter_by(course_id=c.id).all()
             if gs:
                 rows.append({"label":c.label,"code":c.code,
                              "avg":round(sum(g.score for g in gs)/len(gs),1),"color":c.color})
         return rows
     finally: db.close()
 
-def _scores():
-    db = get_db()
-    try: return [g.score for g in db.query(Grade).all()]
-    finally: db.close()
-
-def _timeline(days=42):
+def _scores(cid=None, cut=None):
     db = get_db()
     try:
-        cut=date.today()-timedelta(days=days)
-        sess=db.query(Session).filter(Session.date>=cut).order_by(Session.date).all()
+        q = db.query(Grade)
+        if cid: q = q.filter_by(course_id=cid)
+        return [g.score for g in q.all()]
+    finally: db.close()
+
+def _timeline(cid=None, cut=None, days=42):
+    db = get_db()
+    try:
+        cutoff = cut or (date.today()-timedelta(days=days))
+        q = db.query(Session).filter(Session.date>=cutoff)
+        if cid: q = q.filter_by(course_id=cid)
+        sess = q.order_by(Session.date).all()
         by={}
         for s in sess:
             d=s.date.strftime("%d/%m"); by[d]=by.get(d,0)+1
         return list(by.keys()),list(by.values())
     finally: db.close()
 
-def _progress():
+def _progress(cid=None, cut=None):
     db = get_db()
     try:
+        q = db.query(Course).filter_by(is_active=True)
+        if cid: q = q.filter_by(id=cid)
         return [{"code":c.code,"label":c.label,"done":c.hours_done,
                  "total":c.total_hours,"pct":c.progress_pct,"color":c.color}
-                for c in db.query(Course).filter_by(is_active=True).all()]
+                for c in q.all()]
     finally: db.close()
 
-def _tops(n=8):
+def _tops(cid=None, cut=None, n=8):
     db = get_db()
     try:
         ranked=[]
         for st in db.query(Student).filter_by(is_active=True).all():
-            gs=db.query(Grade).filter_by(student_id=st.id).all()
+            q = db.query(Grade).filter_by(student_id=st.id)
+            if cid: q = q.filter_by(course_id=cid)
+            gs = q.all()
             if gs:
                 avg=round(sum(g.score for g in gs)/len(gs),1)
                 ab=db.query(Attendance).filter_by(student_id=st.id,is_absent=True).count()
@@ -131,13 +173,17 @@ def _tops(n=8):
         return ranked[:n]
     finally: db.close()
 
-def _top_absents(n=8):
+def _top_absents(cid=None, cut=None, n=8):
     db = get_db()
     try:
         rows=[]
         for st in db.query(Student).filter_by(is_active=True).all():
-            ab=db.query(Attendance).filter_by(student_id=st.id,is_absent=True).count()
-            tot=db.query(Attendance).filter_by(student_id=st.id).count()
+            q = db.query(Attendance).filter_by(student_id=st.id)
+            if cid:
+                sids = [s.id for s in db.query(Session).filter_by(course_id=cid).all()]
+                q = q.filter(Attendance.session_id.in_(sids)) if sids else q.filter(False)
+            ab  = q.filter_by(is_absent=True).count()
+            tot = q.count()
             if tot>0:
                 rows.append({"name":f"{st.first_name} {st.last_name}",
                              "ab":ab,"tot":tot,"pct":round(ab/tot*100,1)})
@@ -145,11 +191,14 @@ def _top_absents(n=8):
         return rows[:n]
     finally: db.close()
 
-def _sessions(n=8):
+def _sessions(cid=None, cut=None, n=8):
     db = get_db()
     try:
+        q = db.query(Session).order_by(Session.date.desc())
+        if cid: q = q.filter_by(course_id=cid)
+        if cut: q = q.filter(Session.date >= cut)
         rows=[]
-        for s in db.query(Session).order_by(Session.date.desc()).limit(n).all():
+        for s in q.limit(n).all():
             na=sum(1 for a in s.attendances if a.is_absent)
             nt=len(s.attendances)
             rows.append({"course":s.course.code if s.course else "–",
@@ -161,22 +210,27 @@ def _sessions(n=8):
         return rows
     finally: db.close()
 
-def _notes_par_cours():
+def _notes_par_cours(cid=None, cut=None):
     db = get_db()
     try:
         result=[]
-        for c in db.query(Course).filter_by(is_active=True).all():
+        q = db.query(Course).filter_by(is_active=True)
+        if cid: q = q.filter_by(id=cid)
+        for c in q.all():
             scores=[g.score for g in db.query(Grade).filter_by(course_id=c.id).all()]
             if scores: result.append({"label":c.label,"code":c.code,"scores":scores,"color":c.color})
         return result
     finally: db.close()
 
-def _presence_par_jour():
+def _presence_par_jour(cid=None, cut=None):
     db = get_db()
     try:
         jours=["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"]
         data={j:{"p":0,"t":0} for j in jours}
-        for s in db.query(Session).all():
+        q = db.query(Session)
+        if cid: q = q.filter_by(course_id=cid)
+        if cut: q = q.filter(Session.date >= cut)
+        for s in q.all():
             j=jours[s.date.weekday()] if s.date.weekday()<6 else None
             if j:
                 for a in s.attendances:
@@ -189,11 +243,13 @@ def _presence_par_jour():
         return rows
     finally: db.close()
 
-def _evolution_moyennes():
+def _evolution_moyennes(cid=None, cut=None):
     db = get_db()
     try:
         result=[]
-        for c in db.query(Course).filter_by(is_active=True).all():
+        q = db.query(Course).filter_by(is_active=True)
+        if cid: q = q.filter_by(id=cid)
+        for c in q.all():
             all_g=db.query(Grade).filter_by(course_id=c.id).all()
             if len(all_g)>=2:
                 chunk=max(1,len(all_g)//6)
@@ -203,11 +259,13 @@ def _evolution_moyennes():
         return result
     finally: db.close()
 
-def _grades_by_type():
+def _grades_by_type(cid=None, cut=None):
     db = get_db()
     try:
         types={}
-        for g in db.query(Grade).all():
+        q = db.query(Grade)
+        if cid: q = q.filter_by(course_id=cid)
+        for g in q.all():
             lbl=g.label or "Autre"
             if lbl not in types: types[lbl]=[]
             types[lbl].append(g.score)
@@ -245,15 +303,32 @@ def _fig_gauge(avg,w=W,h=H):
                       margin=dict(l=14,r=14,t=10,b=0),font=dict(family=FONT))
     return fig
 
-def _fig_donut(rows,w=W,h=H):
-    if not rows: return _empty(w,h)
-    fig=go.Figure(go.Pie(labels=[r["label"] for r in rows],values=[r["pct"] for r in rows],hole=0.58,
-        marker=dict(colors=PAL[:len(rows)],line=dict(color="#fff",width=2)),
-        textinfo="percent",textfont=dict(size=9,family=FONT),
-        hovertemplate="<b>%{label}</b><br>%{value}%<extra></extra>"))
-    fig.update_layout(paper_bgcolor=BG,width=w,height=h,autosize=False,showlegend=True,
-        legend=dict(font=dict(size=9,family=FONT),orientation="v",x=1.0,y=0.5,xanchor="left"),
-        margin=dict(l=8,r=80,t=8,b=8),font=dict(family=FONT))
+def _fig_donut(rows, w=460, h=H):
+    if not rows: return _empty(w, h)
+    fig = go.Figure(go.Pie(
+        labels=[r["label"] for r in rows],
+        values=[r["pct"] for r in rows],
+        hole=0.58,
+        marker=dict(colors=PAL[:len(rows)], line=dict(color="#fff", width=2)),
+        textinfo="label+percent",
+        textfont=dict(size=9, family=FONT),
+        hovertemplate="<b>%{label}</b><br>Taux d'absence : %{value:.1f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        paper_bgcolor=BG, width=w, height=h, autosize=False,
+        showlegend=True,
+        legend=dict(
+            font=dict(size=9, family=FONT, color=DARK),
+            orientation="v",
+            x=0.5, y=0.5,
+            xanchor="center", yanchor="middle",
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#E5E7EB", borderwidth=1,
+            itemsizing="constant",
+        ),
+        margin=dict(l=8, r=130, t=8, b=8),
+        font=dict(family=FONT),
+    )
     return fig
 
 def _fig_histo(scores,w=W,h=H):
@@ -266,7 +341,7 @@ def _fig_histo(scores,w=W,h=H):
     colors=["#EF4444" if bins[i+1]<=10 else "#0EA5E9" if bins[i+1]<=14 else "#10B981" for i in range(len(bins)-1)]
     fig=go.Figure(go.Bar(x=lbls,y=cnts,marker=dict(color=colors,line=dict(width=0)),
         text=cnts,textposition="outside",textfont=dict(size=9,family=FONT,color=DARK),width=0.7,
-        hovertemplate="Notes %{x}<br><b>%{y}</b><extra></extra>"))
+        hovertemplate="<b>Tranche %{x}</b><br>%{y} étudiant(s)<extra></extra>"))
     fig.add_annotation(x=0.98,y=0.95,xref="paper",yref="paper",
         text=f"Moy. {round(sum(scores)/len(scores),1)}/20",showarrow=False,
         font=dict(size=10,color="#0EA5E9",family=POPS),bgcolor="rgba(14,165,233,0.1)",
@@ -280,7 +355,7 @@ def _fig_bars(rows,w=W,h=H):
     colors=["#10B981" if a>=14 else "#0EA5E9" if a>=10 else "#EF4444" for a in avgs]
     fig=go.Figure(go.Bar(x=avgs,y=lbls,orientation="h",marker=dict(color=colors,line=dict(width=0)),
         text=[f"{a}/20" for a in avgs],textposition="outside",textfont=dict(size=10,family=POPS,color=DARK),
-        width=0.5,hovertemplate="<b>%{y}</b><br>%{x}/20<extra></extra>"))
+        width=0.5,hovertemplate="<b>%{y}</b><br>Moyenne : %{x}/20<extra></extra>"))
     fig.add_vline(x=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
     fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
         margin=dict(l=8,r=60,t=10,b=20),font=dict(family=FONT,color=GRAY,size=10),
@@ -304,7 +379,7 @@ def _fig_radar(courses,w=W,h=H):
     vals=[c["pct"] for c in courses]+[courses[0]["pct"]]
     fig=go.Figure(go.Scatterpolar(r=vals,theta=lbls,fill="toself",fillcolor="rgba(14,165,233,0.1)",
         line=dict(color="#0EA5E9",width=2),marker=dict(size=4,color="#0EA5E9"),
-        hovertemplate="<b>%{theta}</b><br>%{r:.0f}%<extra></extra>"))
+        hovertemplate="<b>%{theta}</b><br>Avancement : %{r:.0f}%<extra></extra>"))
     fig.update_layout(paper_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
         margin=dict(l=28,r=28,t=28,b=28),
         polar=dict(bgcolor=BG,radialaxis=dict(visible=True,range=[0,100],
@@ -322,7 +397,7 @@ def _fig_absents(rows,w=W,h=H):
     fig=go.Figure(go.Bar(x=vals,y=names,orientation="h",marker=dict(color=colors,line=dict(width=0)),
         text=[f"{v} ({p}%)" for v,p in zip(vals,pcts)],textposition="outside",
         textfont=dict(size=9,family=FONT,color=DARK),width=0.55,
-        hovertemplate="<b>%{y}</b><br>%{x} abs.<extra></extra>"))
+        hovertemplate="<b>%{y}</b><br>%{x} absence(s)<extra></extra>"))
     fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
         margin=dict(l=8,r=72,t=10,b=20),font=dict(family=FONT,color=GRAY,size=10),
         xaxis=dict(gridcolor=GRID,tickfont=dict(size=9,color=LGRAY)),
@@ -337,7 +412,7 @@ def _fig_scatter(pts,w=W,h=H):
         marker=dict(size=11,color=colors,line=dict(color="#fff",width=2),opacity=0.85),
         text=[p["name"].split()[0] for p in pts],textposition="top center",
         textfont=dict(size=8,family=FONT,color=DARK),
-        hovertemplate="<b>%{text}</b><br>Abs:%{x} Moy:%{y}/20<extra></extra>"))
+        hovertemplate="<b>%{text}</b><br>Absences : %{x}<br>Moyenne : %{y}/20<extra></extra>"))
     fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
     layout=_bl(w,h,mb=28)
     layout["xaxis"]["title"]=dict(text="Absences",font=dict(size=9,color=LGRAY))
@@ -372,7 +447,7 @@ def _fig_boxplot(rows,w=W,h=H):
         fig.add_trace(go.Box(y=r["scores"],name=r["code"],boxmean=True,
             marker=dict(color=PAL[i%len(PAL)],line=dict(color="#fff",width=1)),
             line=dict(color=PAL[i%len(PAL)]),fillcolor=fills[i%len(fills)],
-            hovertemplate=f"<b>{r['label']}</b><br>%{{y}}<extra></extra>"))
+            hovertemplate=f"<b>{r['label']}</b><br>Note : %{{y}}/20<extra></extra>"))
     fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.4)",line_width=1.5)
     fig.update_layout(paper_bgcolor=BG,plot_bgcolor=BG,width=w,height=h,autosize=False,showlegend=False,
         margin=dict(l=10,r=10,t=10,b=24),font=dict(family=FONT,color=GRAY,size=10),
@@ -387,7 +462,7 @@ def _fig_presence_jour(rows,w=W,h=H):
         marker=dict(color=colors,line=dict(width=0)),
         text=[f"{r['pct']}%" for r in rows],textposition="outside",
         textfont=dict(size=10,family=POPS,color=DARK),width=0.6,
-        hovertemplate="<b>%{x}</b><br>%{y}%<extra></extra>"))
+        hovertemplate="<b>%{x}</b><br>Taux de présence : %{y}%<extra></extra>"))
     fig.add_hline(y=80,line_dash="dot",line_color="rgba(14,165,233,0.4)",line_width=1.5)
     layout=_bl(w,h,mt=16,mb=24); layout["yaxis"]["range"]=[0,110]
     fig.update_layout(**layout); return fig
@@ -399,7 +474,7 @@ def _fig_evolution(series,w=W,h=H):
         fig.add_trace(go.Scatter(x=s["x"],y=s["y"],name=s["label"],mode="lines+markers",
             line=dict(color=PAL[i%len(PAL)],width=2,shape="spline"),
             marker=dict(size=5,color=PAL[i%len(PAL)],line=dict(color="#fff",width=1.5)),
-            hovertemplate=f"<b>{s['label']}</b> %{{x}} → %{{y}}/20<extra></extra>"))
+            hovertemplate=f"<b>{s['label']}</b><br>Semaine : %{{x}}<br>Moyenne : %{{y}}/20<extra></extra>"))
     fig.add_hline(y=10,line_dash="dot",line_color="rgba(239,68,68,0.35)",line_width=1.5)
     layout=_bl(w,h,mr=12,mt=26,mb=28); layout["showlegend"]=True
     layout["legend"]=dict(orientation="h",y=1.12,x=0.5,xanchor="center",font=dict(size=8,family=FONT))
@@ -424,23 +499,35 @@ def _kpi(num,value,label,sub,border,bg):
         html.Div(sub,style={"fontSize":"10.5px","color":border,"fontWeight":"600"}) if sub else None,
     ])
 
-def _gchart(num,title,sub,fig,delay=0):
-    return html.Div(className="chart-anim",style={
-        "background":"#fff","borderRadius":"14px","padding":"14px 14px 8px",
-        "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","overflow":"hidden",
-        "animationDelay":f"{delay}s",
-    },children=[
-        html.Div(style={"display":"flex","justifyContent":"space-between",
-                        "alignItems":"flex-start","marginBottom":"2px"},children=[
-            html.Div([html.Div(title,style={"fontFamily":POPS,"fontWeight":"700","fontSize":"12px","color":DARK}),
-                      html.Div(sub,style={"fontSize":"10px","color":LGRAY,"marginTop":"1px"})]),
-            html.Div(f"G{num:02d}",style={"fontSize":"9px","fontWeight":"700","letterSpacing":"1px",
-                "color":"#0EA5E9","background":"#E0F2FE","padding":"2px 7px","borderRadius":"99px"}),
+def _gchart(num, title, sub, fig, delay=0):
+    w = fig.layout.width if fig.layout.width else W
+    h = fig.layout.height if fig.layout.height else H
+    return html.Div(className="chart-anim", style={
+        "background": "#fff", "borderRadius": "14px", "padding": "14px 14px 8px",
+        "boxShadow": "0 2px 10px rgba(10,22,40,0.07)",
+        "animationDelay": f"{delay}s",
+    }, children=[
+        html.Div(style={
+            "display": "flex", "justifyContent": "space-between",
+            "alignItems": "flex-start", "marginBottom": "2px"
+        }, children=[
+            html.Div([
+                html.Div(title, style={"fontFamily": POPS, "fontWeight": "700", "fontSize": "12px", "color": DARK}),
+                html.Div(sub,   style={"fontSize": "10px", "color": LGRAY, "marginTop": "1px"}),
+            ]),
+            html.Div(f"G{num:02d}", style={
+                "fontSize": "9px", "fontWeight": "700", "letterSpacing": "1px",
+                "color": "#0EA5E9", "background": "#E0F2FE",
+                "padding": "2px 7px", "borderRadius": "99px",
+            }),
         ]),
-        html.Hr(style={"border":"none","borderTop":"1px solid #F3F4F6","margin":"7px 0 3px"}),
-        html.Div(style={"overflow":"hidden","lineHeight":"0"},children=[
-            dcc.Graph(figure=fig,config={"displayModeBar":False,"responsive":False},
-                      style={"width":f"{W}px","height":f"{H}px","display":"block","overflow":"hidden"}),
+        html.Hr(style={"border": "none", "borderTop": "1px solid #F3F4F6", "margin": "7px 0 3px"}),
+        html.Div(style={"lineHeight": "0"}, children=[   # ← overflow:hidden supprimé
+            dcc.Graph(
+                figure=fig,
+                config={"displayModeBar": False, "responsive": False},
+                style={"width": f"{w}px", "height": f"{h}px", "display": "block"},  # ← width dynamique
+            ),
         ]),
     ])
 
@@ -455,12 +542,14 @@ def _panel_card(title,badge_txt,badge_bg,badge_fg,children):
         ]),html.Div(children),
     ])
 
-def _trow(rank,s):
+def _trow(rank,s,delay=0):
     lbls=["1er","2e","3e","4e","5e","6e","7e","8e"]
     lc=["#F59E0B","#9CA3AF","#CD7F32"]+["#6B7280"]*5
     gc="#10B981" if s["avg"]>=14 else "#0EA5E9" if s["avg"]>=10 else "#EF4444"
-    return html.Div(style={"display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
-        "borderRadius":"8px","background":"#F8FAFC" if rank%2==0 else "#fff","marginBottom":"3px"},children=[
+    return html.Div(className="stat-anim",style={
+        "display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
+        "borderRadius":"8px","background":"#F8FAFC" if rank%2==0 else "#fff",
+        "marginBottom":"3px","animationDelay":f"{delay}s"},children=[
         html.Div(lbls[rank] if rank<8 else f"{rank+1}e",style={"fontFamily":POPS,"fontWeight":"800",
             "fontSize":"10px","color":lc[min(rank,7)],"width":"24px","textAlign":"center"}),
         html.Div(s["name"],style={"flex":"1","fontWeight":"600","fontSize":"12.5px","color":DARK}),
@@ -470,11 +559,13 @@ def _trow(rank,s):
         ]),
     ])
 
-def _abs_row(rank,s):
+def _abs_row(rank,s,delay=0):
     clr="#EF4444" if s["pct"]>20 else "#F59E0B" if s["pct"]>10 else "#10B981"
     bg="#FFF7F7" if s["pct"]>20 else "#FFFBEB" if s["pct"]>10 else "#F0FDF4"
-    return html.Div(style={"display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
-        "borderRadius":"8px","background":bg,"marginBottom":"4px"},children=[
+    return html.Div(className="stat-anim",style={
+        "display":"flex","alignItems":"center","gap":"10px","padding":"8px 10px",
+        "borderRadius":"8px","background":bg,"marginBottom":"4px",
+        "animationDelay":f"{delay}s"},children=[
         html.Div(f"#{rank+1}",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"10px",
             "color":clr,"width":"24px","textAlign":"center"}),
         html.Div(s["name"],style={"flex":"1","fontWeight":"600","fontSize":"12px","color":DARK}),
@@ -484,10 +575,10 @@ def _abs_row(rank,s):
         ]),
     ])
 
-def _cbar(c):
+def _cbar(c,delay=0):
     pct=c["pct"]
     clr="#10B981" if pct>=80 else "#0EA5E9" if pct>=50 else "#EF4444"
-    return html.Div(style={"marginBottom":"12px"},children=[
+    return html.Div(className="stat-anim",style={"marginBottom":"12px","animationDelay":f"{delay}s"},children=[
         html.Div(style={"display":"flex","justifyContent":"space-between","alignItems":"center","marginBottom":"4px"},children=[
             html.Div(style={"display":"flex","alignItems":"center","gap":"6px"},children=[
                 html.Div(style={"width":"7px","height":"7px","borderRadius":"50%","background":c["color"]}),
@@ -504,8 +595,9 @@ def _cbar(c):
 
 
 # ── Rendu des onglets ─────────────────────────────────────────────────────────
-def _render_indicateurs(st,prog):
-    return html.Div(className="tab-content",children=[
+def _render_indicateurs(st, prog):
+    _ts = str(_time.time())
+    return html.Div(id=f"tab-ind-{_ts}", className="tab-content", children=[
         html.Div(style={"display":"grid","gridTemplateColumns":"repeat(5,1fr)","gap":"12px","marginBottom":"12px"},children=[
             _kpi(1,str(st["n_st"]),"Étudiants actifs",f"{st['nw']} séances/sem.","#0EA5E9","#E0F2FE"),
             _kpi(2,str(st["n_co"]),"Cours actifs","Matières en cours","#8B5CF6","#EDE9FE"),
@@ -522,93 +614,98 @@ def _render_indicateurs(st,prog):
             _kpi(9,f"{st['jr']}%","Absences justifiées","Sur les absences","#F59E0B","#FEF3C7"),
             _kpi(10,str(st["nw"]),"Séances cette sem.",f"{st['nm']} ce mois","#8B5CF6","#EDE9FE"),
         ]),
-        html.Div(style={"background":"#fff","borderRadius":"14px","padding":"20px",
-            "boxShadow":"0 2px 10px rgba(10,22,40,0.07)"},children=[
+        html.Div(className="chart-anim",style={
+            "background":"#fff","borderRadius":"14px","padding":"20px",
+            "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","animationDelay":"0.6s"},children=[
             html.Div("Récapitulatif général",style={"fontFamily":POPS,"fontWeight":"700","fontSize":"14px",
                 "color":DARK,"marginBottom":"14px","paddingBottom":"12px","borderBottom":"1px solid #F3F4F6"}),
             html.Div(style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"12px"},children=[
-                html.Div(style={"background":bg,"borderRadius":"10px","padding":"14px 16px",
-                    "borderLeft":f"3px solid {clr}"},children=[
+                html.Div(className="kpi-anim",style={
+                    "background":bg,"borderRadius":"10px","padding":"14px 16px",
+                    "borderLeft":f"3px solid {clr}","animationDelay":f"{0.7+j*0.07}s"},children=[
                     html.Div(val,style={"fontFamily":POPS,"fontWeight":"800","fontSize":"20px","color":DARK}),
                     html.Div(lbl,style={"fontSize":"11px","color":GRAY,"marginTop":"3px"}),
-                ]) for lbl,val,clr,bg in [
+                ]) for j,(lbl,val,clr,bg) in enumerate([
                     ("Total étudiants",str(st["n_st"]),"#0EA5E9","#F0F9FF"),
                     ("Total séances",str(st["n_se"]),"#F59E0B","#FFFBEB"),
                     ("Total notes",str(st["t_g"]),"#8B5CF6","#F5F3FF"),
                     ("Taux de réussite",f"{st['pr']}%","#10B981","#F0FDF4"),
-                ]
+                ])
             ]),
         ]),
     ])
 
 
-def _render_visualisation(st):
-    ab=_absence_rows(); av=_grade_rows(); sc=_scores()
-    tl_d,tl_c=_timeline(); prog=_progress()
-    by_type=_grades_by_type(); boxplot=_notes_par_cours()
-    pres_j=_presence_par_jour(); evol=_evolution_moyennes()
-    absents=_top_absents(); tops=_tops()
+def _render_visualisation(st, cid=None, cut=None):
+    _ts = str(_time.time())
+    ab=_absence_rows(cid,cut); av=_grade_rows(cid,cut)
+    tl_d,tl_c=_timeline(cid,cut); prog=_progress(cid,cut)
+    by_type=_grades_by_type(cid,cut); boxplot=_notes_par_cours(cid,cut)
+    evol=_evolution_moyennes(cid,cut)
+    absents=_top_absents(cid,cut); tops=_tops(cid,cut)
     scatter=[{"name":t["name"],"ab":t["ab"],"avg":t["avg"]} for t in tops]
     chart_rows=[
-        [(1,"Moyenne générale","Indicateur /20 — seuil : 10",_fig_gauge(st["avg"])),
-         (2,"Absences par cours","Répartition du taux d'absence",_fig_donut(ab)),
-         (3,"Distribution des notes","Nb étudiants par tranche",_fig_histo(sc))],
-        [(4,"Moyenne par cours","Comparaison — seuil 10 en pointillé",_fig_bars(av)),
-         (5,"Activité des séances","Séances par date (6 semaines)",_fig_line(tl_d,tl_c)),
-         (6,"Avancement des cours","% des heures réalisées",_fig_radar(prog))],
-        [(7,"Top des absences","Étudiants les plus absents",_fig_absents(absents)),
-         (8,"Absences vs Moyenne","Corrélation présence/résultats",_fig_scatter(scatter)),
-         (9,"Notes par évaluation","Moyenne et volume par catégorie",_fig_by_type(by_type))],
-        [(10,"Boxplot par cours","Distribution min/max/médiane",_fig_boxplot(boxplot)),
-         (11,"Présence par jour","Taux selon le jour de la semaine",_fig_presence_jour(pres_j)),
+        [(2,"Absences par cours","Répartition du taux d'absence",_fig_donut(ab)),
+         (4,"Moyenne par cours","Comparaison — seuil 10 en pointillé",_fig_bars(av)),
+         (5,"Activité des séances","Séances par date (6 semaines)",_fig_line(tl_d,tl_c))],
+        [(6,"Avancement des cours","% des heures réalisées",_fig_radar(prog)),
+         (7,"Top des absences","Étudiants les plus absents",_fig_absents(absents)),
+         (8,"Absences vs Moyenne","Corrélation présence/résultats",_fig_scatter(scatter))],
+        [(9,"Notes par évaluation","Moyenne et volume par catégorie",_fig_by_type(by_type)),
+         (10,"Boxplot par cours","Distribution min/max/médiane",_fig_boxplot(boxplot)),
          (12,"Évolution des moyennes","Progression au fil des semaines",_fig_evolution(evol))],
     ]
     delay=0.0; children=[]
     for row in chart_rows:
         cells=[]
         for num,title,sub,fig in row:
-            cells.append(_gchart(num,title,sub,fig,delay)); delay+=0.05
+            cells.append(_gchart(num,title,sub,fig,delay)); delay+=0.08
         children.append(html.Div(style={"display":"grid","gridTemplateColumns":"1fr 1fr 1fr",
             "gap":"13px","marginBottom":"13px"},children=cells))
-    return html.Div(className="tab-content",children=children)
+    return html.Div(id=f"tab-vis-{_ts}", className="tab-content", children=children)
 
 
-def _render_classements():
-    tops=_tops(); absents=_top_absents()
-    return html.Div(className="tab-content",children=[
+def _render_classements(cid=None, cut=None):
+    _ts = str(_time.time())
+    tops=_tops(cid,cut); absents=_top_absents(cid,cut)
+    return html.Div(id=f"tab-cls-{_ts}", className="tab-content", children=[
         html.Div(style={"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"16px","marginBottom":"16px"},children=[
             _panel_card("Classement par mérite","Meilleure moyenne","#FEF9C3","#D97706",
-                        [_trow(i,s) for i,s in enumerate(tops)]),
+                        [_trow(i,s,delay=i*0.06) for i,s in enumerate(tops)]),
             _panel_card("Classement par absences","Plus d'absences","#FEF2F2","#EF4444",
-                        [_abs_row(i,s) for i,s in enumerate(absents)]),
+                        [_abs_row(i,s,delay=i*0.06) for i,s in enumerate(absents)]),
         ]),
-        html.Div(style={"background":"#fff","borderRadius":"14px",
-            "padding":"24px","boxShadow":"0 2px 10px rgba(10,22,40,0.07)","border":"1px solid #E5E7EB"},children=[
+        html.Div(className="chart-anim",style={
+            "background":"#fff","borderRadius":"14px","padding":"24px",
+            "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","border":"1px solid #E5E7EB",
+            "animationDelay":"0.5s"},children=[
             html.Div("Vue comparative",style={"fontFamily":POPS,"fontWeight":"800","fontSize":"15px",
                 "color":DARK,"marginBottom":"18px"}),
             html.Div(style={"display":"grid","gridTemplateColumns":"repeat(4,1fr)","gap":"16px"},children=[
-                html.Div(style={"textAlign":"center","background":"#F8FAFC",
-                    "borderRadius":"12px","padding":"18px 12px","border":"1px solid #E5E7EB"},children=[
+                html.Div(className="kpi-anim",style={
+                    "textAlign":"center","background":"#F8FAFC","borderRadius":"12px",
+                    "padding":"18px 12px","border":"1px solid #E5E7EB",
+                    "animationDelay":f"{0.55+j*0.08}s"},children=[
                     html.Div(v,style={"fontFamily":POPS,"fontSize":"28px","fontWeight":"800","color":c}),
                     html.Div(l,style={"fontSize":"11px","color":GRAY,"marginTop":"4px"}),
                     html.Div(n,style={"fontSize":"11px","color":DARK,"fontWeight":"700","marginTop":"3px"}),
-                ]) for v,l,c,n in [
+                ]) for j,(v,l,c,n) in enumerate([
                     (f"{tops[0]['avg']}/20" if tops else "—","Meilleure moyenne","#F59E0B",tops[0]["name"] if tops else "—"),
                     (f"{tops[-1]['avg']}/20" if tops else "—","Moyenne plancher","#0EA5E9",tops[-1]["name"] if tops else "—"),
                     (str(absents[0]["ab"]) if absents else "0","Max absences","#EF4444",absents[0]["name"] if absents else "—"),
                     (f"{round(sum(s['avg'] for s in tops)/len(tops),1)}/20" if tops else "—",
                      "Moyenne du groupe","#10B981",f"Top {len(tops)} étudiants"),
-                ]
+                ])
             ]),
         ]),
     ])
 
 
-def _render_situation():
-    sess=_sessions(); prog=_progress(); st=_stats()
-    return html.Div(className="tab-content",children=[
-        # Tableau séances récentes
-        html.Div(style={"marginBottom":"16px"},children=[
+def _render_situation(cid=None, cut=None):
+    _ts = str(_time.time())
+    sess=_sessions(cid,cut); prog=_progress(cid,cut); st=_stats(cid,cut)
+    return html.Div(id=f"tab-sit-{_ts}", className="tab-content", children=[
+        html.Div(className="chart-anim",style={"marginBottom":"16px","animationDelay":"0s"},children=[
             _panel_card("Séances récentes",f"{st['n_se']} total","#E0F2FE","#0EA5E9",
             html.Div([
                 html.Div(style={"display":"grid","gridTemplateColumns":"80px 1fr 110px 70px 80px 70px",
@@ -618,9 +715,11 @@ def _render_situation():
                         "letterSpacing":"0.8px","color":"rgba(255,255,255,0.6)"})
                     for h in ["Cours","Thème","Date","Durée","Présents","Absents"]
                 ]),
-                *[html.Div(style={"display":"grid","gridTemplateColumns":"80px 1fr 110px 70px 80px 70px",
+                *[html.Div(className="stat-anim",style={
+                    "display":"grid","gridTemplateColumns":"80px 1fr 110px 70px 80px 70px",
                     "gap":"8px","padding":"9px 10px","borderRadius":"8px","alignItems":"center",
-                    "background":"#F8FAFC" if i%2==0 else "#fff"},children=[
+                    "background":"#F8FAFC" if i%2==0 else "#fff",
+                    "animationDelay":f"{i*0.05}s"},children=[
                     html.Div(style={"display":"flex","alignItems":"center","gap":"5px"},children=[
                         html.Div(style={"width":"8px","height":"8px","borderRadius":"50%",
                             "background":s["color"],"flexShrink":"0"}),
@@ -645,17 +744,17 @@ def _render_situation():
                 ]) for i,s in enumerate(sess)],
             ])),
         ]),
-        # Avancement + Métriques
         html.Div(style={"display":"grid","gridTemplateColumns":"1.2fr 1fr","gap":"16px"},children=[
-            _panel_card("Avancement des cours",f"{len(prog)} cours","#EDE9FE","#8B5CF6",
-                        html.Div([_cbar(c) for c in prog])),
+            html.Div(className="chart-anim",style={"animationDelay":"0.1s"},children=[
+                _panel_card("Avancement des cours",f"{len(prog)} cours","#EDE9FE","#8B5CF6",
+                            html.Div([_cbar(c,delay=i*0.06) for i,c in enumerate(prog)])),
+            ]),
             html.Div(style={"display":"flex","flexDirection":"column","gap":"10px"},children=[
-                html.Div(style={"background":"#fff","borderRadius":"12px","padding":"14px 18px",
+                html.Div(className="stat-anim",style={
+                    "background":"#fff","borderRadius":"12px","padding":"14px 18px",
                     "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","display":"flex",
-                    "alignItems":"center","gap":"14px","borderLeft":f"4px solid {clr}"},children=[
-                    html.Div(style={"width":"38px","height":"38px","borderRadius":"10px","background":sbg,
-                        "display":"flex","alignItems":"center","justifyContent":"center",
-                        "fontSize":"18px","flexShrink":"0"},children=icon),
+                    "alignItems":"center","gap":"14px","borderLeft":f"4px solid {clr}",
+                    "animationDelay":f"{0.15+i*0.1}s"},children=[
                     html.Div([
                         html.Div(val,style={"fontFamily":POPS,"fontWeight":"800","fontSize":"20px",
                             "color":DARK,"lineHeight":"1"}),
@@ -663,12 +762,13 @@ def _render_situation():
                     ]),
                     html.Div(sub,style={"marginLeft":"auto","fontSize":"11px","fontWeight":"700",
                         "color":clr,"background":sbg,"padding":"3px 10px","borderRadius":"99px"}),
-                ]) for icon,val,lbl,sub,clr,sbg in [
-                    ("📅",str(st["nw"]),      "Séances cette semaine",f"{st['nm']} ce mois","#0EA5E9","#E0F2FE"),
-                    ("✅",f"{st['pr']}%",      "Taux de réussite",    "Notes >= 10",         "#10B981","#ECFDF5"),
-                    ("⚠️",f"{st['ar']}%",      "Taux d'absence",      "Toutes séances",      "#F59E0B","#FEF3C7"),
-                    ("🎓",f"{st['avg']}/20",   "Moyenne générale",    f"{st['er']}% excellent","#8B5CF6","#EDE9FE"),
-                ]
+                ]) for i,(val,lbl,sub,clr,sbg) in enumerate([
+                    (str(st["nw"]),      "Séances cette semaine", f"{st['nm']} ce mois",    "#0EA5E9","#E0F2FE"),
+                    (f"{st['pr']}%",     "Taux de réussite",      "Notes >= 10",             "#10B981","#ECFDF5"),
+                    (f"{st['ar']}%",     "Taux d'absence",        "Toutes séances",          "#F59E0B","#FEF3C7"),
+                    (f"{st['avg']}/20",  "Moyenne générale",      f"{st['er']}% excellent",  "#8B5CF6","#EDE9FE"),
+                    (f"{st['jr']}%",     "Absences justifiées",   f"{st['f_g']} notes < 10", "#EF4444","#FEF2F2"),
+                ])
             ]),
         ]),
     ])
@@ -676,49 +776,36 @@ def _render_situation():
 
 # ── Boutons onglets ───────────────────────────────────────────────────────────
 def _btn_styles(active_tab):
-    """Retourne les 4 styles de boutons selon l'onglet actif."""
     styles = []
-    for key, _, _ in TABS:
+    for key,_,__ in TABS:
         is_active = active_tab == key
         styles.append({
-            "padding": "9px 22px",
-            "borderRadius": "9px",
-            "border": "none",
-            "cursor": "pointer",
-            "fontFamily": POPS,
-            "fontWeight": "700",
-            "fontSize": "12.5px",
-            "lineHeight": "1.3",
-            "whiteSpace": "nowrap",
-            "transition": "all 0.2s ease",
-            "background": "#0EA5E9" if is_active else "transparent",
-            "color": "#fff" if is_active else GRAY,
-            "boxShadow": "0 4px 12px rgba(14,165,233,0.3)" if is_active else "none",
+            "padding":"9px 22px","borderRadius":"9px","border":"none",
+            "cursor":"pointer","fontFamily":POPS,"fontWeight":"700",
+            "fontSize":"12.5px","lineHeight":"1.3","whiteSpace":"nowrap",
+            "transition":"all 0.2s ease",
+            "background":"#0EA5E9" if is_active else "transparent",
+            "color":"#fff" if is_active else GRAY,
+            "boxShadow":"0 4px 12px rgba(14,165,233,0.3)" if is_active else "none",
         })
     return styles
 
 
 # ── Layout ────────────────────────────────────────────────────────────────────
 def layout(user=None):
-    name = (user or {}).get("full_name","").split()[0] if (user or {}).get("full_name") else ""
     st   = _stats()
     prog = _progress()
-
     return html.Div(id="app-shell", children=[
         sidebar("/", user),
         html.Div(id="main-content", children=[
             topbar("Tableau de Bord",""),
             html.Div(id="page-content", children=[
 
-                # ── Ligne titre + onglets ────────────────────────────────
                 html.Div(style={
-                    "display":"flex","alignItems":"center",
-                    "justifyContent":"space-between",
+                    "display":"flex","alignItems":"center","justifyContent":"space-between",
                     "marginBottom":"18px","paddingBottom":"16px",
                     "borderBottom":"2px solid #F3F4F6","gap":"12px",
                 },children=[
-
-                    # Titre
                     html.Div([
                         html.Div("Tableau de bord",style={"fontFamily":POPS,"fontSize":"21px",
                             "fontWeight":"800","color":DARK,"letterSpacing":"-0.3px","marginBottom":"2px"}),
@@ -726,19 +813,16 @@ def layout(user=None):
                                  style={"fontSize":"11px","color":LGRAY}),
                     ],style={"flexShrink":"0"}),
 
-                    # Onglets — au centre
                     html.Div(style={
                         "display":"flex","gap":"5px",
                         "background":"#F3F4F6","borderRadius":"12px","padding":"5px",
                     },children=[
-                        html.Button(
-                            id=f"btn-{key}",
-                            n_clicks=0,
+                        html.Button(id=f"btn-{key}",n_clicks=0,
                             children=[
                                 html.Div(lbl,style={"fontWeight":"700","fontSize":"12.5px"}),
                                 html.Div(hint,style={"fontSize":"9px","opacity":"0.75","marginTop":"1px"}),
                             ],
-                            style={  # style initial, sera mis à jour par callback
+                            style={
                                 "padding":"9px 22px","borderRadius":"9px","border":"none",
                                 "cursor":"pointer","fontFamily":POPS,"fontWeight":"700",
                                 "fontSize":"12.5px","lineHeight":"1.3","whiteSpace":"nowrap",
@@ -750,8 +834,7 @@ def layout(user=None):
                         ) for key,lbl,hint in TABS
                     ]),
 
-                    # Badge
-                    html.Div("10 KPIs · 12 Graphiques",style={
+                    html.Div("10 KPIs · 9 Graphiques",style={
                         "background":"#F0F9FF","borderRadius":"8px","padding":"7px 14px",
                         "fontSize":"11px","color":"#0EA5E9","fontWeight":"700",
                         "fontFamily":POPS,"border":"1px solid rgba(14,165,233,0.2)",
@@ -759,14 +842,12 @@ def layout(user=None):
                     }),
                 ]),
 
-                # ── Filtres ──────────────────────────────────────────────
                 html.Div(style={
                     "background":"#fff","borderRadius":"12px","padding":"12px 20px",
                     "boxShadow":"0 2px 10px rgba(10,22,40,0.07)","marginBottom":"16px",
                     "display":"flex","alignItems":"center","gap":"16px","flexWrap":"wrap",
                 },children=[
-                    html.Div("Filtres",style={"fontFamily":POPS,"fontWeight":"700",
-                        "fontSize":"12.5px","color":DARK}),
+                    html.Div("Filtres",style={"fontFamily":POPS,"fontWeight":"700","fontSize":"12.5px","color":DARK}),
                     html.Div(style={"width":"1px","height":"22px","background":"#E5E7EB"}),
                     html.Div(style={"display":"flex","alignItems":"center","gap":"7px"},children=[
                         html.Label("Cours",style={"fontSize":"10px","fontWeight":"700","color":GRAY,
@@ -792,10 +873,8 @@ def layout(user=None):
                     }),
                 ]),
 
-                # ── Contenu ──────────────────────────────────────────────
-                html.Div(id="dash-tab-content",
-                         children=[_render_indicateurs(st, prog)]),
-
+                dcc.Store(id="active-tab-store", data="indicateurs"),
+                html.Div(id="dash-tab-content", children=[_render_indicateurs(st, prog)]),
             ]),
         ]),
     ])
@@ -805,50 +884,45 @@ def layout(user=None):
 def register_callbacks(app):
 
     @app.callback(
-        # Styles des 4 boutons
-        Output("btn-indicateurs",  "style"),
-        Output("btn-visualisation","style"),
-        Output("btn-classements",  "style"),
-        Output("btn-situation",    "style"),
-        # Contenu de l'onglet
-        Output("dash-tab-content", "children"),
-        # Triggers
-        Input("btn-indicateurs",  "n_clicks"),
-        Input("btn-visualisation","n_clicks"),
-        Input("btn-classements",  "n_clicks"),
-        Input("btn-situation",    "n_clicks"),
-        Input("f-course",         "value"),
-        Input("f-period",         "value"),
+        Output("btn-indicateurs",   "style"),
+        Output("btn-visualisation", "style"),
+        Output("btn-classements",   "style"),
+        Output("btn-situation",     "style"),
+        Output("dash-tab-content",  "children"),
+        Output("active-tab-store",  "data"),
+        Input("btn-indicateurs",   "n_clicks"),
+        Input("btn-visualisation", "n_clicks"),
+        Input("btn-classements",   "n_clicks"),
+        Input("btn-situation",     "n_clicks"),
+        Input("f-course",          "value"),
+        Input("f-period",          "value"),
+        State("active-tab-store",  "data"),
         prevent_initial_call=True,
     )
-    def handle_tab(n1, n2, n3, n4, course_id, period):
-        # Identifier quel bouton a déclenché le callback
+    def handle_tab(n1, n2, n3, n4, course_id, period, current_tab):
         triggered = ctx.triggered_id or "btn-indicateurs"
 
-        # Si c'est un filtre, garder l'onglet actif courant
-        # On détermine l'onglet selon le bouton cliqué
+        # Filtres → garder l'onglet actif courant
         if triggered in ("f-course", "f-period"):
-            # Récupérer le dernier onglet via les n_clicks
-            clicks = {"btn-indicateurs":n1,"btn-visualisation":n2,
-                      "btn-classements":n3,"btn-situation":n4}
-            tab = max(clicks, key=lambda k: clicks[k] or 0).replace("btn-","")
+            tab = current_tab or "indicateurs"
         else:
-            tab = triggered.replace("btn-","")
+            tab = triggered.replace("btn-", "")
 
-        styles = _btn_styles(tab)
-        st     = _stats()
-        prog   = _progress()
+        cid, cut = _parse_filters(course_id, period)
+        styles   = _btn_styles(tab)
+        st       = _stats(cid, cut)
+        prog     = _progress(cid, cut)
 
         if tab == "indicateurs":
             content = _render_indicateurs(st, prog)
         elif tab == "visualisation":
-            content = _render_visualisation(st)
+            content = _render_visualisation(st, cid, cut)
         elif tab == "classements":
-            content = _render_classements()
+            content = _render_classements(cid, cut)
         else:
-            content = _render_situation()
+            content = _render_situation(cid, cut)
 
-        return styles[0], styles[1], styles[2], styles[3], content
+        return styles[0], styles[1], styles[2], styles[3], content, tab
 
     @app.callback(
         Output("f-course","value"),
