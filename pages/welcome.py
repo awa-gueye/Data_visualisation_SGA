@@ -100,7 +100,11 @@ def layout(user: dict = None):
 
     abs_color = "#EF4444" if abs_rate > 20 else "#F59E0B" if abs_rate > 10 else "#10B981"
     avg_color = "#10B981" if avg_gen >= 12 else "#F59E0B" if avg_gen >= 10 else "#EF4444"
-    date_str  = datetime.now().strftime("%A %d %B %Y").capitalize()
+    JOURS = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"]
+    MOIS  = ["","Janvier","Février","Mars","Avril","Mai","Juin",
+            "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
+    now      = datetime.now()
+    date_str = f"{JOURS[now.weekday()]} {now.day:02d} {MOIS[now.month]} {now.year}"
 
     return html.Div(id="welcome-page", style={
         "minHeight": "100vh",
