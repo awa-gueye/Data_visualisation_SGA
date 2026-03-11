@@ -14,7 +14,7 @@ NAV_LINKS = [
     ("/courses",    "Cours"),
     ("/sessions",   "Séances"),
     ("/grades",     "Notes"),
-    ("/analytics",  "Analytics"),
+    ("/analytics",  "Analyses"),
     ("/reports",    "Rapports"),
 ]
 

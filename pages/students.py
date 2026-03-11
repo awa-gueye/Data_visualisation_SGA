@@ -530,7 +530,7 @@ def register_callbacks(app):
                 html.Div(style={"display": "flex", "alignItems": "center", "gap": "9px"}, children=[
                     html.Div((s.first_name[0] + s.last_name[0]).upper(), style={
                         "width": "34px", "height": "34px", "borderRadius": "9px",
-                        "background": f"linear-gradient(135deg,{BLU},{COLORS['secondary']})",
+                        "background": f"linear-gradient(135deg, #10B981, #0EA5E9)",
                         "display": "flex", "alignItems": "center", "justifyContent": "center",
                         "fontWeight": "bold", "fontSize": "12px", "color": "#fff",
                         "flexShrink": "0", "fontFamily": TNR,

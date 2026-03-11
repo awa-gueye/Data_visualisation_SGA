@@ -4,7 +4,7 @@ pages/login.py – Page de connexion + inscription
 from dash import html, dcc, Input, Output, State, callback, no_update, ctx
 import dash
 from auth import login_user, register_user
-
+import dash_svg as svg
 
 def layout():
     return html.Div(id="login-page", children=[
@@ -15,7 +15,24 @@ def layout():
 
                 html.Div(className="modal-header", children=[
                     html.Div(className="login-logo", children=[
-                        html.Div("✨", style={"fontSize": "36px", "marginBottom": "4px"}),
+                        html.Div(style={
+                                "width":"52px","height":"52px","borderRadius":"12px",
+                                "background":"#0A1628","display":"flex",
+                                "alignItems":"center","justifyContent":"center",
+                                "margin":"0 auto 10px",
+                            }, children=[
+                                svg.Svg([
+                                    svg.Path(d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2",
+                                            stroke="#FFFFFF", strokeWidth="2",
+                                            strokeLinecap="round", strokeLinejoin="round"),
+                                    svg.Circle(cx="9", cy="7", r="4",
+                                            stroke="#FFFFFF", strokeWidth="2"),
+                                    svg.Path(d="M19 8v6M22 11h-6",
+                                            stroke="#FFFFFF", strokeWidth="2",
+                                            strokeLinecap="round", strokeLinejoin="round"),
+                                ], viewBox="0 0 24 24", fill="none",
+                                style={"width":"26px","height":"26px"}),
+                            ]),
                         html.H2("Créer un compte"),
                         html.P("Rejoignez le Système de Gestion Académique"),
                     ]),
@@ -106,7 +123,19 @@ def layout():
         html.Div(className="login-card slide-up", children=[
 
             html.Div(className="login-logo", children=[
-                html.Div("🎓", style={"fontSize": "48px", "marginBottom": "8px"}),
+                html.Div(style={
+                        "width":"64px","height":"64px","borderRadius":"14px",
+                        "background":"#0A1628","display":"flex",
+                        "alignItems":"center","justifyContent":"center",
+                        "margin":"0 auto 12px",
+                    }, children=[
+                        svg.Svg([
+                            svg.Path(d="M12 3L1 9l11 6 9-4.91V17M5 13.18v4L12 21l7-3.82v-4",
+                                    stroke="#FFFFFF", strokeWidth="2",
+                                    strokeLinecap="round", strokeLinejoin="round"),
+                        ], viewBox="0 0 24 24", fill="none",
+                        style={"width":"32px","height":"32px"}),
+                    ]),
                 html.H1("SGA"),
                 html.P("Système de Gestion Académique"),
             ]),
