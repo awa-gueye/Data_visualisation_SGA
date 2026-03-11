@@ -13,6 +13,7 @@ import time as _time
 from pages.components import sidebar, topbar
 from utils.db import get_db
 from models import Student, Course, Session, Attendance, Grade
+from utils.format import fr, fr_pct, fr_note
 
 FONT  = "Nunito, sans-serif"
 POPS  = "Poppins, sans-serif"

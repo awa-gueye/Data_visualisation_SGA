@@ -8,7 +8,7 @@ from utils.db import get_db
 from utils.excel_helper import generate_grades_template, parse_grades_excel
 from models import Course, Student, Grade
 from sqlalchemy.orm import joinedload
-
+from utils.format import fr, fr_pct, fr_note
 DARK  = "#0A1628"
 GRAY  = "#6B7280"
 LGRAY = "#9CA3AF"

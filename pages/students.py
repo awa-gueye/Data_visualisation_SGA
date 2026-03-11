@@ -16,7 +16,7 @@ from pages.components import sidebar, topbar, empty_state, alert_msg
 from utils.db import get_db
 from models import Student, Attendance, Grade, Course, Session
 from config import COLORS
-
+from utils.format import fr, fr_pct, fr_note
 TNR  = "'Times New Roman', Times, serif"
 DARK = "#0A1628"
 GRAY = "#6B7280"

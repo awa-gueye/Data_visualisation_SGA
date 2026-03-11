@@ -8,7 +8,7 @@ from utils.db import get_db
 from utils.pdf_gen import generate_student_report, generate_attendance_report
 from models import Student, Course, Session, Attendance, Grade
 from config import COLORS
-
+from utils.format import fr, fr_pct, fr_note
 
 def layout(user: dict = None):
     db = get_db()
