@@ -8,7 +8,6 @@ from utils.db import get_db, safe_commit
 from models import Course
 from config import COLORS
 from sqlalchemy.orm import joinedload
-from utils.format import fr, fr_pct, fr_note
 
 COURSE_COLORS = ["#6C63FF","#FF6584","#43E97B","#F7B731","#45AAF2","#FF7675","#A29BFE","#FDCB6E"]
 

@@ -9,7 +9,6 @@ from pages.components import sidebar, topbar
 from utils.db import get_db
 from models import Student, Course, Session, Attendance, Grade
 from config import COLORS
-
 # ── Palette & constantes ───────────────────────────────────────────────────
 C_BLU  = "#0EA5E9"; C_GRN  = "#10B981"; C_RED  = "#EF4444"
 C_ORG  = "#F59E0B"; C_PURP = "#8B5CF6"; C_PINK = "#EC4899"

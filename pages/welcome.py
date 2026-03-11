@@ -7,7 +7,6 @@ import dash_svg as svg
 from utils.db import get_db
 from models import Student, Course, Grade, Attendance
 from datetime import datetime
-from utils.format import fr, fr_pct, fr_note
 
 def _icon_graduation(color="#0A1628", size=32):
     return svg.Svg([

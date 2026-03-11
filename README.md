@@ -71,8 +71,7 @@ sga-academique/
 ├── utils/
 │   ├── db.py               # Initialisation et accès à la base de données
 │   ├── excel_helper.py     # Génération et parsing de fichiers Excel
-│   ├── pdf_gen.py          # Génération de rapports PDF
-│   └── format.py           # Formatage des nombres en français
+│   └── pdf_gen.py          # Génération de rapports PDF
 │
 └── assets/
     └── style.css           # Feuille de styles globale
