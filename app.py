@@ -26,7 +26,8 @@ app = dash.Dash(
 server = app.server
 server.secret_key = SECRET_KEY
 
-
+print("Initialisation DB...")
+init_db()
 # ─────────────────────────────────────────────────────────────────────────────
 #  Layout racine
 # ─────────────────────────────────────────────────────────────────────────────
