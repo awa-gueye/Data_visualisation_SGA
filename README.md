@@ -2,7 +2,7 @@
 
 Application web de gestion académique développée avec Dash et Python, déployée sur Render avec une base de données PostgreSQL.
 
-Lien de l'application : https://sga-academique.onrender.com  
+Lien de l'application : https://data-visualisation-sga.onrender.com.com  
 Compte de démonstration : `admin` / `admin123`
 
 ---
